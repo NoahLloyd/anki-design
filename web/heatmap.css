@@ -1,0 +1,54 @@
+/* Reforge — contribution-style review heatmap (deck browser). */
+
+.rf-heatmap {
+  margin: 28px auto 8px;
+  max-width: 760px;
+  background: var(--rf-surface, #171a21);
+  border: 1px solid var(--rf-border, #272b36);
+  border-radius: var(--rf-radius, 12px);
+  padding: 18px 20px;
+  text-align: left;
+}
+
+.rf-hm-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 12px;
+}
+.rf-hm-title { font-weight: 700; font-size: 14px; }
+.rf-hm-stats { color: var(--rf-text-dim, #9aa0ad); font-size: 12px; }
+.rf-hm-stats b { color: var(--rf-text, #e6e8ee); }
+
+.rf-hm-grid {
+  display: flex;
+  gap: 3px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+.rf-hm-col { display: flex; flex-direction: column; gap: 3px; }
+
+.rf-hm-cell {
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  background: #20242e;
+}
+.rf-hm-empty { background: transparent; }
+
+.rf-hm-l0 { background: #20242e; }
+.rf-hm-l1 { background: #1f3d5c; }
+.rf-hm-l2 { background: #2f6aa8; }
+.rf-hm-l3 { background: #4f9ae0; }
+.rf-hm-l4 { background: #7fc4ff; }
+
+.rf-hm-foot {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  justify-content: flex-end;
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--rf-text-dim, #9aa0ad);
+}
+.rf-hm-foot .rf-hm-cell { width: 10px; height: 10px; }

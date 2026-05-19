@@ -1,0 +1,74 @@
+/* Reforge — base theme. Injected into deck browser, overview, reviewer.
+   This is intentionally restrained for v1: prove the pipeline, give a clean
+   neutral base, then iterate screen by screen. */
+
+:root {
+  --rf-bg: #0f1115;
+  --rf-surface: #171a21;
+  --rf-surface-2: #1e222b;
+  --rf-border: #272b36;
+  --rf-text: #e6e8ee;
+  --rf-text-dim: #9aa0ad;
+  /* --rf-accent is injected from config in <head>; usages fall back to
+     #6c8cff via var(--rf-accent, #6c8cff) if config is unavailable. */
+  --rf-radius: 12px;
+  --rf-font: -apple-system, "SF Pro Text", "Inter", system-ui, sans-serif;
+}
+
+html, body {
+  background: var(--rf-bg) !important;
+  color: var(--rf-text) !important;
+  font-family: var(--rf-font) !important;
+  -webkit-font-smoothing: antialiased;
+}
+
+a, a:visited { color: var(--rf-accent) !important; text-decoration: none; }
+
+/* ---- Deck browser ---- */
+#deckbrowser, .deckbrowser, table {
+  border-collapse: separate;
+  border-spacing: 0 6px;
+}
+
+tr.deck {
+  background: var(--rf-surface);
+}
+tr.deck td {
+  border-top: 1px solid var(--rf-border);
+  border-bottom: 1px solid var(--rf-border);
+  padding: 14px 10px !important;
+}
+tr.deck td:first-child {
+  border-left: 1px solid var(--rf-border);
+  border-radius: var(--rf-radius) 0 0 var(--rf-radius);
+}
+tr.deck td:last-child {
+  border-right: 1px solid var(--rf-border);
+  border-radius: 0 var(--rf-radius) var(--rf-radius) 0;
+}
+tr.deck:hover td { background: var(--rf-surface-2); }
+
+a.deck { color: var(--rf-text) !important; font-weight: 600; }
+
+.new-count  { color: #5aa9ff !important; font-weight: 700; }
+.learn-count{ color: #ff8a5a !important; font-weight: 700; }
+.review-count { color: #4fd08a !important; font-weight: 700; }
+.zero-count { color: var(--rf-text-dim) !important; }
+
+.gears { opacity: .45; }
+.gears:hover { opacity: 1; }
+
+/* primary call-to-action button (Study / etc.) */
+button {
+  background: var(--rf-accent, #6c8cff) !important;
+  color: #fff !important;
+  border: none !important;
+  border-radius: 10px !important;
+  padding: 9px 18px !important;
+  font-weight: 600 !important;
+  font-family: var(--rf-font) !important;
+}
+button:hover { filter: brightness(1.08); }
+
+/* ---- Overview ---- */
+.descfont { color: var(--rf-text-dim) !important; }

@@ -1,0 +1,29 @@
+/* Reforge — reviewer progress bar.
+   Kept deliberately minimal so it never fights with user note styling. */
+
+#reforge-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  z-index: 9999;
+}
+
+#reforge-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--rf-accent, #6c8cff);
+  transition: width 0.25s ease;
+}
+
+#reforge-progress-label {
+  position: fixed;
+  top: 8px;
+  right: 12px;
+  font: 600 11px/1 var(--rf-font, system-ui, sans-serif);
+  color: var(--rf-text-dim, #9aa0ad);
+  z-index: 9999;
+  pointer-events: none;
+}
