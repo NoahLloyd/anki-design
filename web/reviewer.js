@@ -1,4 +1,4 @@
-// Reforge — reviewer progress bar. Python pushes values via window.__reforgeProgress.
+// BetterAnki — reviewer progress bar. Python pushes values via window.__reforgeProgress.
 (function () {
   function ensureBar() {
     var bar = document.getElementById("reforge-progress");

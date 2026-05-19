@@ -1,4 +1,4 @@
-# Reforge
+# BetterAnki
 
 A from-scratch Anki UI redesign add-on. One cohesive thing you control,
 replacing Onigiri + a separate progress bar + a separate heatmap.
@@ -6,12 +6,16 @@ replacing Onigiri + a separate progress bar + a separate heatmap.
 ## How it works
 
 Anki renders the deck list, overview, and reviewer as Chromium web views.
-Reforge injects `web/theme.css` into them via the `webview_will_set_content`
+BetterAnki injects `web/theme.css` into them via the `webview_will_set_content`
 hook, sets `--rf-accent` from config in `<head>`, renders the heatmap
 server-side in `__init__.py` (from the `revlog` table) and appends it to the
 deck browser, and drives a small reviewer progress-bar widget from Python.
 
 No network calls, no bundled binaries — keeps AnkiWeb review trivial.
+
+> Internal CSS/JS identifiers use the `rf-` prefix and `__reforgeProgress`
+> bridge. That's a stable internal namespace, deliberately not renamed with
+> the product, so a rebrand never risks breaking style/JS wiring.
 
 ## Layout
 
@@ -23,12 +27,12 @@ No network calls, no bundled binaries — keeps AnkiWeb review trivial.
 | `web/reviewer.css` / `.js` | progress bar |
 | `config.json` / `config.md` | user-facing settings + their help text |
 | `manifest.json` | name, version, `conflicts` with rival add-ons |
-| `build.py` / `Makefile` | produce `dist/reforge.ankiaddon` |
+| `build.py` / `Makefile` | produce `dist/betteranki.ankiaddon` |
 
 ## Dev loop
 
-This repo is the source of truth.
-`~/Library/Application Support/Anki2/addons21/reforge` is a symlink to it.
+This repo is the source of truth (`~/betteranki`).
+`~/Library/Application Support/Anki2/addons21/betteranki` is a symlink to it.
 
 1. Edit a file here.
 2. **Fully quit and reopen Anki** (no hot-reload for add-on assets).
@@ -39,7 +43,7 @@ This repo is the source of truth.
 ## Building for AnkiWeb
 
 ```
-make build      # -> dist/reforge.ankiaddon
+make build      # -> dist/betteranki.ankiaddon
 ```
 
 The `.ankiaddon` is a zip with files at the root; `__pycache__`, `meta.json`,
@@ -49,11 +53,11 @@ The `.ankiaddon` is a zip with files at the root; `__pycache__`, `meta.json`,
 
 1. Log in to <https://ankiweb.net> with your sync account.
 2. Go to the shared add-ons area and choose to upload a new add-on.
-3. Fill in title, tags, description, and a support page URL (a GitHub repo /
+3. Fill in title, tags, description, and a support page URL (the GitHub repo /
    issues link is fine).
-4. Upload `dist/reforge.ankiaddon`.
+4. Upload `dist/betteranki.ankiaddon`.
 5. The first upload creates the listing and assigns a **numeric ID** — that
-   becomes the install code *and* the installed folder name. Reforge already
+   becomes the install code *and* the installed folder name. BetterAnki already
    resolves its own folder at runtime, so this is safe.
 6. Later releases: bump `human_version` in `manifest.json`, update
    `CHANGELOG.md`, `make build`, re-upload to the same listing.

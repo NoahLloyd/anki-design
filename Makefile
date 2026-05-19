@@ -1,5 +1,5 @@
 ADDONS := $(HOME)/Library/Application Support/Anki2/addons21
-LINK   := $(ADDONS)/reforge
+LINK   := $(ADDONS)/betteranki
 SRC    := $(CURDIR)
 
 .PHONY: dev build clean
@@ -12,7 +12,7 @@ dev:
 	@echo "linked: $(LINK) -> $(SRC)"
 	@echo "now fully quit and reopen Anki to load changes."
 
-# Produce dist/reforge.ankiaddon for AnkiWeb upload.
+# Produce dist/betteranki.ankiaddon for AnkiWeb upload.
 build:
 	@python3 build.py
 

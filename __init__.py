@@ -1,4 +1,4 @@
-"""Reforge — a from-scratch Anki UI redesign.
+"""BetterAnki — a from-scratch Anki UI redesign.
 
 v1 scope:
   * inject a custom theme into the deck browser, overview, and reviewer

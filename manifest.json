@@ -1,6 +1,6 @@
 {
-  "name": "Reforge (UI Redesign)",
-  "package": "reforge",
+  "name": "BetterAnki",
+  "package": "betteranki",
   "human_version": "0.1.0",
   "conflicts": [
     "1011095603",
