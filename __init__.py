@@ -9,11 +9,13 @@
   * reviewer progress bar
 
 Everything visible is driven by web/ assets and config so iterating on the
-look is just editing CSS / config and restarting Anki.
+look is just editing CSS / config. In a `make dev` worktree, web/*.css and
+web/*.js hot-reload live; Python changes still need an Anki restart.
 """
 
 import datetime
 import os
+import threading
 import time
 from typing import Any, Dict, Optional
 
@@ -303,3 +305,131 @@ gui_hooks.state_did_change.append(on_state_did_change)
 gui_hooks.reviewer_did_show_question.append(on_show_question)
 gui_hooks.reviewer_did_show_answer.append(on_show_answer)
 gui_hooks.reviewer_will_end.append(on_reviewer_will_end)
+
+
+# --------------------------------------------------------------------------- #
+# Dev hot-reload — web/ assets only, enabled by `make dev` (a .devmode file).
+#
+# Hard rule: the watcher must NEVER touch Anki during shutdown. Refreshing a
+# view there fires Anki's own signals after the collection is gone, and those
+# errors surface OUTSIDE our try/except (in Anki's slots) -> the "may be
+# caused by an add-on" dialog that blocks quitting. So the thread is tied to
+# the profile lifecycle: it starts only once the profile is open and is
+# stopped on profile_will_close, before any teardown.
+#
+# Never ships: build.py and .gitignore exclude .devmode, so end users (who
+# install the zip, no .devmode) never start the watcher thread.
+# --------------------------------------------------------------------------- #
+ADDON_SRC = os.path.dirname(os.path.abspath(__file__))
+
+_dev_stop = threading.Event()
+_dev_thread: Optional[threading.Thread] = None
+
+
+def _dev_active() -> bool:
+    return os.path.exists(os.path.join(ADDON_SRC, ".devmode"))
+
+
+def _dev_reload_views() -> None:
+    """Runs on the Qt main thread. Bails unless a collection is open and we
+    are not shutting down. Cache-busts our stylesheets in every webview
+    (instant, no flicker), then re-renders the current screen."""
+    if _dev_stop.is_set() or not _dev_active():
+        return
+    if mw is None or getattr(mw, "col", None) is None:
+        return  # no profile / mid-shutdown — never refresh here
+    state = getattr(mw, "state", None)
+    if state not in ("deckBrowser", "overview", "review"):
+        return
+
+    bust = (
+        "(function(){var v=Date.now();"
+        "var ls=document.getElementsByTagName('link');"
+        "for(var i=0;i<ls.length;i++){var l=ls[i];"
+        "if(l.rel==='stylesheet'&&l.href.indexOf('/_addons/%s/web/')!==-1)"
+        "{l.href=l.href.split('?')[0]+'?v='+v;}}})();" % ADDON_DIR
+    )
+    views = []
+    for attr in ("web", "bottomWeb"):
+        w = getattr(mw, attr, None)
+        if w is not None:
+            views.append(w)
+    rv = getattr(mw, "reviewer", None)
+    if rv is not None:
+        if getattr(rv, "web", None) is not None:
+            views.append(rv.web)
+        bottom = getattr(rv, "bottom", None)
+        if bottom is not None and getattr(bottom, "web", None) is not None:
+            views.append(bottom.web)
+    for w in views:
+        try:
+            w.eval(bust)
+        except Exception:
+            pass
+
+    try:
+        if state == "deckBrowser":
+            mw.deckBrowser.refresh()
+        elif state == "overview":
+            mw.overview.refresh()
+        elif state == "review":
+            try:
+                with open(os.path.join(ADDON_SRC, "web", "reviewer.js")) as fh:
+                    mw.reviewer.web.eval(fh.read())
+            except Exception:
+                pass
+            _push_progress()
+    except Exception:
+        pass
+
+
+def _dev_watch() -> None:
+    web_dir = os.path.join(ADDON_SRC, "web")
+    seen: Dict[str, float] = {}
+    primed = False
+    # _dev_stop.wait() doubles as the sleep AND an instant exit signal.
+    while not _dev_stop.is_set() and _dev_active():
+        changed = False
+        try:
+            for name in os.listdir(web_dir):
+                path = os.path.join(web_dir, name)
+                if not os.path.isfile(path):
+                    continue
+                mtime = os.path.getmtime(path)
+                if seen.get(path) != mtime:
+                    if primed:
+                        changed = True
+                    seen[path] = mtime
+        except Exception:
+            pass
+        primed = True
+        if changed and not _dev_stop.is_set():
+            try:
+                mw.taskman.run_on_main(_dev_reload_views)
+            except Exception:
+                pass
+        _dev_stop.wait(0.5)
+
+
+def _dev_start() -> None:
+    """Start the watcher once a profile is open. Idempotent."""
+    global _dev_thread
+    if not _dev_active():
+        return
+    if _dev_thread is not None and _dev_thread.is_alive():
+        return
+    _dev_stop.clear()
+    _dev_thread = threading.Thread(
+        target=_dev_watch, name="betteranki-devwatch", daemon=True
+    )
+    _dev_thread.start()
+
+
+def _dev_shutdown() -> None:
+    """Stop the watcher before Anki tears anything down."""
+    _dev_stop.set()
+
+
+gui_hooks.profile_did_open.append(_dev_start)
+gui_hooks.main_window_did_init.append(_dev_start)
+gui_hooks.profile_will_close.append(_dev_shutdown)

@@ -31,14 +31,55 @@ No network calls, no bundled binaries — keeps AnkiWeb review trivial.
 
 ## Dev loop
 
-This repo is the source of truth (`~/betteranki`).
-`~/Library/Application Support/Anki2/addons21/betteranki` is a symlink to it.
+Each git worktree gets a **fully isolated Anki**: its own base directory, its
+own `addons21/` (so no add-on conflicts), and a unique single-instance key —
+so multiple worktrees' Ankis run **simultaneously**.
 
-1. Edit a file here.
-2. **Fully quit and reopen Anki** (no hot-reload for add-on assets).
-3. Look at the result.
+Per worktree, once:
 
-`make dev` re-creates the symlink (e.g. after a fresh clone on another machine).
+```
+make dev        # symlink this worktree into its isolated base + hot-reload
+make run        # launch THIS worktree's Anki (runs alongside the others)
+```
+
+Then:
+
+1. Edit `web/*.css`, `web/*.js`, or the heatmap HTML.
+2. **It reloads live** — no Anki restart. CSS updates in place with no
+   flicker; the visible screen re-renders for JS / heatmap changes.
+3. Editing `__init__.py` (Python logic / hooks) still needs a restart of
+   *that* instance — Anki imports add-on Python once at startup.
+
+Real data (optional):
+
+```
+make seed       # copy your real collection into this worktree's base
+```
+
+`make run` on a fresh base starts with an **empty collection** (fine for
+theme/CSS work; the heatmap is empty). `make seed` rsyncs your real
+`Anki2/` collection in (media + add-ons excluded, so it stays light).
+**Do not sync a seeded instance** — it shares your AnkiWeb account and
+syncing a copied collection can push unwanted merges upstream.
+
+How parallelism works:
+
+- `make run` launches Anki's bundled venv binary directly with
+  `-b <isolated base>` and a per-worktree `USER` env. Anki keys its
+  single-instance lock on the username, so a unique `USER` lets instances
+  coexist; `open -a Anki` would only refocus the running one.
+- Bases live in `~/Library/Application Support/Anki2-dev/<NAME>` and persist
+  between runs (profile/settings stick).
+
+Other targets:
+
+- `make undev` — remove this worktree's symlink + `.devmode` (keeps the base).
+- `make clean-base` — delete this worktree's isolated base entirely.
+- A watcher thread (web/ mtimes, ~0.5s poll, stdlib only) runs only when
+  `.devmode` is present; `make build` / `.gitignore` exclude `.devmode`, so
+  shipped installs never start it.
+- `make dev NAME=foo` / `make run ANKI=/path/to/.venv/bin/anki` override
+  the addon name / Anki binary.
 
 ## Building for AnkiWeb
 
