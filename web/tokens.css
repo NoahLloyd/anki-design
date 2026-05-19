@@ -1,0 +1,39 @@
+/* BetterAnki — design tokens.
+   Anki 25.09 colors every built-in component (deck browser, toolbar, bottom
+   bars, overview, reviewer chrome) through these CSS custom properties.
+   Overriding them here recolors Anki's own UI coherently instead of fighting
+   individual selectors. --rf-accent is injected from config in <head>. */
+
+:root,
+.night-mode,
+body {
+  --canvas: #0e1014 !important;
+  --canvas-elevated: #181b22 !important;
+  --canvas-inset: #14171d !important;
+  --canvas-overlay: #181b22 !important;
+  --canvas-glass: rgba(20, 23, 29, 0.72) !important;
+
+  --fg: #eef1f6 !important;
+  --fg-subtle: #aeb4c0 !important;
+  --fg-faint: #6b7280 !important;
+  --fg-disabled: #4b5563 !important;
+
+  --border: #2b313c !important;
+  --border-subtle: #232831 !important;
+  --border-radius-medium: 14px !important;
+
+  --accent: var(--rf-accent, #6c8cff) !important;
+  --link: var(--rf-accent, #6c8cff) !important;
+
+  --state-new: #5aa9ff !important;
+  --state-learn: #ff9e57 !important;
+  --state-review: #4fd08a !important;
+
+  --shadow: rgba(0, 0, 0, 0.45) !important;
+}
+
+html,
+body {
+  background: var(--canvas) !important;
+  color: var(--fg) !important;
+}

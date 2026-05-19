@@ -1,0 +1,34 @@
+/* BetterAnki — top toolbar restyle.
+   DOM (Anki 25.09): .header > .left-tray / .toolbar / .right-tray;
+   nav links are a.hitem with ids #decks #add #browse #stats #sync. */
+
+.header {
+  background: var(--canvas) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  border-bottom: 1px solid var(--border-subtle) !important;
+  padding: 6px 14px !important;
+}
+
+.toolbar {
+  gap: 4px;
+}
+
+a.hitem {
+  color: var(--fg-subtle) !important;
+  font-weight: 600 !important;
+  padding: 7px 13px !important;
+  border-radius: 9px;
+  text-decoration: none !important;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+a.hitem:hover {
+  color: var(--fg) !important;
+  background: var(--canvas-elevated) !important;
+  text-decoration: none !important;
+}
+
+a#sync.hitem {
+  color: var(--rf-accent, #6c8cff) !important;
+}
