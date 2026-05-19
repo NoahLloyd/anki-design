@@ -1,4 +1,4 @@
-# Reforge configuration
+# BetterAnki configuration
 
 - **accent** — hex color used for buttons, the progress bar, and accents.
   Example: `"#6c8cff"`.
