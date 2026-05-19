@@ -1,0 +1,10 @@
+{
+  "name": "Reforge (UI Redesign)",
+  "package": "reforge",
+  "human_version": "0.1.0",
+  "conflicts": [
+    "1011095603",
+    "1708250053",
+    "1771074083"
+  ]
+}
