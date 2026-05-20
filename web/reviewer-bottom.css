@@ -1,0 +1,223 @@
+/* BetterAnki — reviewer bottom bar.
+
+   Anki 25.x DOM (aqt/reviewer.py):
+     <center id=outer>
+       <table id=innertable>
+         <tr>
+           <td.stat>      <button>Edit</button>            ← E
+           <td#middle>    {show-answer | ease buttons}
+           <td.stat>      <button>More ▾<span#time></span></button>  ← M
+   show-answer state injects in #middle:
+     <table><tr><td.stat2><button#ansbut>Show Answer <span.stattxt>{counts}</span></button>
+   ease state injects 2–4 plain <button>s in #middle (one is #defease).
+
+   This stylesheet strips ALL button chrome. The bottom bar reads as quiet
+   typography — a letterspaced "press SPACE" cue for show-answer, and four
+   stat-columns (KEY · LABEL · INTERVAL) for the ease state, matching the
+   numerics language of the homepage hero. */
+
+:root {
+  --rf-paper: #0b0c0f;
+  --rf-ink: #eceae2;
+  --rf-ink-dim: #9b978a;
+  --rf-ink-faint: #5d5a51;
+  --rf-line: rgba(236, 234, 226, 0.10);
+  --rf-line-2: rgba(236, 234, 226, 0.20);
+  --rf-row-hover: rgba(236, 234, 226, 0.05);
+  --rf-due: #79b69b;
+  --rf-new: #8bb0e6;
+  --rf-learn: #d7a76c;
+  --rf-sans: ui-sans-serif, -apple-system, "SF Pro Text", system-ui, sans-serif;
+  --rf-serif: ui-serif, "New York", "Hoefler Text", "Iowan Old Style", Charter, Georgia, serif;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-rf-theme="dark"]) {
+    --rf-paper: #f6f3ec;
+    --rf-ink: #1f1d18;
+    --rf-ink-dim: #6a6557;
+    --rf-ink-faint: #a39d8b;
+    --rf-line: rgba(31, 29, 24, 0.10);
+    --rf-line-2: rgba(31, 29, 24, 0.22);
+    --rf-row-hover: rgba(31, 29, 24, 0.04);
+    --rf-due: #2f8462;
+    --rf-new: #2f5fb5;
+    --rf-learn: #a05f1e;
+  }
+}
+
+html, body {
+  background: var(--rf-paper) !important;
+  color: var(--rf-ink) !important;
+  font-family: var(--rf-sans) !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* Outer / table layout */
+#outer {
+  width: 100%;
+  padding: 18px 26px 22px !important;
+  box-sizing: border-box;
+}
+#innertable {
+  border: 0 !important;
+  background: transparent !important;
+  border-collapse: collapse !important;
+  border-spacing: 0 !important;
+  width: 100% !important;
+}
+#innertable td {
+  border: 0 !important;
+  padding: 0 !important;
+  vertical-align: middle !important;
+}
+#innertable td.stat {
+  width: 1%;
+  white-space: nowrap;
+  vertical-align: middle !important;
+}
+#middle {
+  text-align: center;
+}
+#middle table {
+  margin: 0 auto !important;
+  border-collapse: collapse !important;
+  width: auto !important;
+}
+#middle table td { padding: 0 !important; }
+/* Only the ease-state tds get the counter; the show-answer state wraps its
+   button in a td.stat2 which we exclude. */
+#middle table tr td:not(.stat2) { counter-increment: ba-ease; }
+
+/* Reset: kill all the default button chrome — we use pure typography. */
+button {
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 8px !important;
+  padding: 8px 12px !important;
+  margin: 0 !important;
+  color: var(--rf-ink-dim) !important;
+  font: 500 11.5px/1 var(--rf-sans) !important;
+  letter-spacing: 0.06em !important;
+  cursor: pointer !important;
+  box-shadow: none !important;
+  outline: none !important;
+  transition: color 160ms ease, background 160ms ease !important;
+}
+button:hover {
+  color: var(--rf-ink) !important;
+  background: var(--rf-row-hover) !important;
+}
+button:active { transform: translateY(1px) !important; }
+
+/* Edit / More — quietly tucked in the corners */
+button[onclick*="'edit'"],
+button[onclick*="'more'"] {
+  font: 500 10.5px/1 var(--rf-sans) !important;
+  letter-spacing: 0.14em !important;
+  text-transform: uppercase !important;
+  color: var(--rf-ink-faint) !important;
+  padding: 8px 10px !important;
+}
+button[onclick*="'edit'"]:hover,
+button[onclick*="'more'"]:hover { color: var(--rf-ink-dim) !important; }
+.stattxt {
+  color: var(--rf-ink-faint) !important;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ===== SHOW ANSWER — pure typography, no button =====
+   Stack: a letterspaced label + the colored count summary below. */
+#outer button#ansbut,
+button#ansbut {
+  display: inline-flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  gap: 7px !important;
+  padding: 10px 18px !important;
+  background: transparent !important;
+  color: var(--rf-ink) !important;
+  font: 600 13px/1 var(--rf-sans) !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.32em !important;
+  border-radius: 10px !important;
+}
+button#ansbut:hover { color: var(--rf-accent, #6c8cff) !important; background: transparent !important; }
+button#ansbut .stattxt {
+  display: block;
+  font: 500 11.5px/1 var(--rf-sans) !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  color: var(--rf-ink-faint) !important;
+  margin: 0 !important;
+}
+button#ansbut .new-count   { color: var(--rf-new)   !important; font-weight: 600; }
+button#ansbut .learn-count { color: var(--rf-learn) !important; font-weight: 600; }
+button#ansbut .review-count{ color: var(--rf-due)   !important; font-weight: 600; }
+button#ansbut u { text-decoration: none; font-weight: 700; color: var(--rf-ink) !important; }
+
+/* ===== EASE BUTTONS — four stat columns =====
+   Each <button> becomes: KEY NUMBER (big) · LABEL (uppercase) · INTERVAL (dim).
+   The key counter (1/2/3/4) is injected with CSS counter-increment so it
+   shows the user's keyboard shortcut, not the label.
+
+   Hover: subtle background tint + key in accent.
+   Default ease (#defease, usually Good): key is in accent by default. */
+#middle table { counter-reset: ba-ease 0; }
+#outer #middle table tr td button,
+#middle table tr td button {
+  display: inline-flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  gap: 8px !important;
+  min-width: 90px !important;
+  padding: 12px 14px !important;
+  background: transparent !important;
+  color: var(--rf-ink-dim) !important;
+  font: 600 10px/1 var(--rf-sans) !important;
+  letter-spacing: 0.18em !important;
+  text-transform: uppercase !important;
+  border-radius: 10px !important;
+  margin: 0 6px !important;
+  position: relative;
+}
+/* Inject the key number above the label — only for ease buttons (non-stat2) */
+#middle table tr td:not(.stat2) button::before {
+  content: counter(ba-ease);
+  display: block;
+  font: 500 26px/1 var(--rf-sans);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.025em;
+  color: var(--rf-ink);
+  text-transform: none;
+  margin-bottom: 2px;
+}
+#middle table tr td button:hover {
+  background: var(--rf-row-hover) !important;
+  color: var(--rf-ink) !important;
+}
+#middle table tr td button:hover::before {
+  color: var(--rf-accent, #6c8cff);
+}
+/* Real Anki uses .nobold inside ease buttons for the interval; .stattxt
+   on the show-answer button for the count summary. Style both. */
+#middle table tr td button .nobold,
+#middle table tr td button .stattxt {
+  display: block;
+  font: 500 10px/1 var(--rf-sans) !important;
+  font-weight: 500 !important;
+  letter-spacing: 0.04em !important;
+  text-transform: none !important;
+  color: var(--rf-ink-faint) !important;
+  margin: 0 !important;
+}
+
+/* Default ease — the key number is accent, signaling Enter would pick it. */
+#outer #middle button#defease,
+button#defease { color: var(--rf-ink) !important; }
+#outer #middle button#defease::before,
+button#defease::before { color: var(--rf-accent, #6c8cff); }
+#outer #middle button#defease:hover,
+button#defease:hover { background: var(--rf-row-hover) !important; }
