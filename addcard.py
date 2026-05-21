@@ -1,4 +1,4 @@
-"""BetterAnki — Add Card window redesign.
+"""Anki Design — Add Card window redesign.
 
 The native AddCards dialog (`aqt.addcards.AddCards`) is a QMainWindow with:
   - top row: notetype + deck chooser
@@ -6,7 +6,7 @@ The native AddCards dialog (`aqt.addcards.AddCards`) is a QMainWindow with:
   - bottom: QDialogButtonBox (Add / Close / Help / History)
 
 We rebuild all the Qt chrome around the editor in the same editorial style as
-the rest of BetterAnki (settings dialog, deck home, sidebar). The editor
+the rest of Anki Design (settings dialog, deck home, sidebar). The editor
 webview itself gets a CSS overlay in `web/addcard.css` (injected via
 `webview_will_set_content` when the context is an Editor in ADD_CARDS mode).
 
@@ -563,7 +563,7 @@ def on_add_cards_did_init(addcards: AddCards) -> None:
         import traceback
         try:
             print(
-                f"[betteranki.addcard] redress failed: {e}\n"
+                f"[anki-design.addcard] redress failed: {e}\n"
                 f"{traceback.format_exc()}",
                 flush=True,
             )

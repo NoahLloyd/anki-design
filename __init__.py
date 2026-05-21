@@ -1,4 +1,4 @@
-"""BetterAnki — a from-scratch Anki UI redesign.
+"""Anki Design — a from-scratch Anki UI redesign.
 
   * override Anki's design tokens so its own components recolor coherently
   * redesign the deck homepage (card rows, count chips, integrated actions)
@@ -174,10 +174,12 @@ def on_webview_will_set_content(web_content: WebContent, context: Optional[Any])
     # Reviewer geometry — variables surface in reviewer.css.
     width_map = {"narrow": "640px", "medium": "780px", "wide": "920px",
                  "full": "100%"}
-    fontsize_map = {"small": "16px", "medium": "19px", "large": "22px",
-                    "x-large": "26px"}
+    # Sizes tuned for the reviewer rebuild's reading column. "medium" matches
+    # the 25px the rebuild was designed against (see reviewer.css comment).
+    fontsize_map = {"small": "20px", "medium": "25px", "large": "30px",
+                    "x-large": "36px"}
     card_width = width_map.get(card_width_choice, "780px")
-    card_font_size = fontsize_map.get(font_size_choice, "19px")
+    card_font_size = fontsize_map.get(font_size_choice, "25px")
     reviewer_decl = (
         f"--rf-card-max-width:{card_width};"
         f"--rf-card-font-size:{card_font_size};"
@@ -242,8 +244,11 @@ def on_webview_will_set_content(web_content: WebContent, context: Optional[Any])
     if cfg.get("sidebar_nav", True) and isinstance(
         context, (DeckBrowser, Overview)
     ):
+        web_content.css.append(f"{WEB}/logo.css")
         web_content.css.append(f"{WEB}/sidebar.css")
+        web_content.css.append(f"{WEB}/deckopts.css")
         web_content.js.append(f"{WEB}/sidebar.js")
+        web_content.js.append(f"{WEB}/deckopts.js")
         # Embed the standing data in <head> as a global so sidebar.js reads
         # it synchronously on its first run.
         try:
@@ -261,7 +266,7 @@ def on_webview_will_set_content(web_content: WebContent, context: Optional[Any])
         web_content.css.append(f"{WEB}/sidebar.css")  # for .ba-cog
         web_content.body = (
             '<button class="ba-cog" onclick="pycmd(\'ba:settings\')" '
-            'title="BetterAnki settings">⚙</button>' + web_content.body
+            'title="Anki Design settings">⚙</button>' + web_content.body
         )
     # Reviewer header — deck name (with built-in back link) on the left,
     # position counter on the right. Replaces the floating "Decks" button.
@@ -478,8 +483,6 @@ def build_heatmap_html(weeks: int = 53) -> str:
         probe -= 1
     today_n = counts.get(today_idx, 0)
 
-    legend = "".join(f'<div class="rf-hm-cell rf-hm-l{i}"></div>' for i in range(5))
-
     return f"""
     <div class="rf-heatmap">
       <div class="rf-hm-head">
@@ -500,9 +503,6 @@ def build_heatmap_html(weeks: int = 53) -> str:
           <div class="rf-hm-grid">{''.join(cells)}</div>
         </div>
       </div>
-      <div class="rf-hm-foot">
-        <span>Less</span>{legend}<span>More</span>
-      </div>
     </div>
     """
 
@@ -516,7 +516,7 @@ def on_deck_browser_will_render_content(
         try:
             heatmap = build_heatmap_html(int(cfg.get("heatmap_weeks", 53)))
         except Exception as e:
-            heatmap = f"<!-- betteranki heatmap error: {e} -->"
+            heatmap = f"<!-- anki-design heatmap error: {e} -->"
     # Single-deck hero replaces the table (CSS hides the table in this mode).
     hero = ""
     try:
@@ -653,14 +653,14 @@ def _mark_sidebar_active(state: Optional[str] = None) -> None:
 
 
 def _open_settings() -> None:
-    """Open the BetterAnki settings dialog."""
+    """Open the Anki Design settings dialog."""
     try:
         from .settings import open_settings
         open_settings(mw)
     except Exception as e:
         try:
             from aqt.utils import showWarning
-            showWarning(f"BetterAnki settings: {e}")
+            showWarning(f"Anki Design settings: {e}")
         except Exception:
             pass
 
@@ -698,6 +698,12 @@ def _on_js_message(handled, message, context):
             mw.on_sync_button_clicked()
         elif cmd == "settings":
             _open_settings()
+        elif cmd == "website":
+            try:
+                from aqt.utils import openLink
+                openLink("https://anki.design")
+            except Exception:
+                return handled
         elif cmd == "undo":
             try:
                 mw.undo()
@@ -737,23 +743,43 @@ def _on_js_message(handled, message, context):
                 mw.onPrefs()
             except Exception:
                 return handled
-        elif cmd.startswith("deck-opts:"):
-            tail = cmd.split(":", 1)[1]
-            if tail.isdigit():
-                # Use Anki's own _showOptions which puts up the full context
-                # menu — Rename, Options, Export, Delete — same as clicking
-                # the gear next to a deck row in the deck-list view.
-                try:
-                    mw.deckBrowser._showOptions(tail)  # type: ignore[attr-defined]
-                except Exception:
-                    # Fallback: at least open the review-settings dialog.
+        elif cmd.startswith("deck:"):
+            # Items from our custom deck-options menu (web/deckopts.js).
+            # Format: deck:<action>:<did>
+            parts = cmd.split(":", 2)
+            if len(parts) != 3 or not parts[2].isdigit():
+                return handled
+            action = parts[1]
+            did = int(parts[2])
+            db = getattr(mw, "deckBrowser", None)
+            try:
+                if action == "rename" and db is not None:
+                    db._rename(did)  # type: ignore[attr-defined]
+                elif action == "options":
                     try:
                         from aqt.deckoptions import display_options_for_deck_id
                         from anki.decks import DeckId
-                        display_options_for_deck_id(DeckId(int(tail)))
+                        display_options_for_deck_id(DeckId(did))
                     except Exception:
-                        return handled
-            else:
+                        if db is not None:
+                            db._options(did)  # type: ignore[attr-defined]
+                elif action == "export":
+                    # Anki's deck-browser exporter dispatches on did.
+                    try:
+                        from aqt.import_export.exporting import ExportDialog
+                        ExportDialog(mw, did=did)
+                    except Exception:
+                        if db is not None:
+                            db._export(did)  # type: ignore[attr-defined]
+                elif action == "rebuild" and db is not None:
+                    db._rebuild(did)  # type: ignore[attr-defined]
+                elif action == "empty" and db is not None:
+                    db._empty(did)  # type: ignore[attr-defined]
+                elif action == "delete" and db is not None:
+                    db._delete(did)  # type: ignore[attr-defined]
+                else:
+                    return handled
+            except Exception:
                 return handled
         else:
             return handled
@@ -893,7 +919,7 @@ def _single_deck_hero() -> str:
         <header class="ba-deck-head ba-rise">
           <h1 class="ba-deck-name">{name}</h1>
           <button class="ba-deck-opts"
-                  onclick="event.stopPropagation();pycmd('ba:deck-opts:{did}')"
+                  onclick="window.__adDeckOpts({did}, event)"
                   title="Deck options" aria-label="Deck options">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
                  stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
@@ -1267,6 +1293,67 @@ gui_hooks.reviewer_will_end.append(on_reviewer_will_end)
 # Sidebar nav: route `ba:*` pycmds to the right mw methods + settings dialog.
 gui_hooks.webview_did_receive_js_message.append(_on_js_message)
 
+
+# Sidebar shortcuts — make the keys hinted in the sidebar (A, D, comma) do
+# what the user expects.
+#
+# Anki binds `a`/`d`/`b`/`t`/`y`/`s` as global shortcuts in aqt/main.py.
+# We can't unbind those (they're created as QShortcut objects on `mw` at
+# startup), but we CAN intercept the functions they call. So:
+#   - A → onAddCard:  patch to open our inline embed instead of the
+#     standalone AddCards window.
+#   - D → moveToState("deckBrowser"):  patch to also tear down the embed
+#     if it's currently open, so the deck-browser UI actually comes back.
+#   - Plain `,` → settings:  Anki has no binding for `,` at all, so add a
+#     QShortcut for it.
+def _setup_sidebar_shortcuts() -> None:
+    # Patch onAddCard so the A key (and Tools menu, and toolbar) all open
+    # the inline embed.
+    try:
+        _orig_on_add_card = mw.onAddCard
+
+        def _patched_on_add_card(*args, **kwargs):
+            try:
+                from . import addcard_embed
+                addcard_embed.open_inline(mw)
+            except Exception:
+                _orig_on_add_card(*args, **kwargs)
+
+        mw.onAddCard = _patched_on_add_card  # type: ignore[assignment]
+    except Exception:
+        pass
+
+    # Patch moveToState so leaving the deck-area context (e.g., D from
+    # inside the inline-Add embed) closes the embed before the navigation.
+    try:
+        _orig_move_to_state = mw.moveToState
+
+        def _patched_move_to_state(state, *args, **kwargs):
+            try:
+                from . import addcard_embed
+                addcard_embed.close_inline()
+            except Exception:
+                pass
+            return _orig_move_to_state(state, *args, **kwargs)
+
+        mw.moveToState = _patched_move_to_state  # type: ignore[assignment]
+    except Exception:
+        pass
+
+    # Plain comma → settings. Anki uses Ctrl/Cmd+, for preferences (already
+    # wired by _add_tools_menu_action); this adds the bare-key version that
+    # the sidebar hints at.
+    try:
+        from aqt.qt import QShortcut, QKeySequence
+        sc = QShortcut(QKeySequence(","), mw)
+        sc.setAutoRepeat(False)
+        sc.activated.connect(_open_settings)
+    except Exception:
+        pass
+
+
+gui_hooks.main_window_did_init.append(_setup_sidebar_shortcuts)
+
 # Sync status indicator — show pending/full when there are changes to push,
 # and a soft pulse while a sync is in progress.
 try:
@@ -1286,7 +1373,7 @@ try:
 except Exception:
     pass
 
-# Inject a "BetterAnki" tab into Anki's native Preferences dialog so every
+# Inject an "Anki Design" tab into Anki's native Preferences dialog so every
 # entry point — including the Tools-menu "Preferences…" / app-menu shortcut
 # the user already knows — surfaces our settings alongside Anki's own.
 try:
@@ -1295,7 +1382,7 @@ try:
 except Exception:
     pass
 
-# Anki add-on dialog "Config" → open Preferences on the BetterAnki tab
+# Anki add-on dialog "Config" → open Preferences on the Anki Design tab
 # instead of dumping raw JSON in front of the user.
 try:
     mw.addonManager.setConfigAction(__name__, _open_settings)
@@ -1306,7 +1393,7 @@ except Exception:
 def _add_tools_menu_action() -> None:
     try:
         from aqt.qt import QAction, QKeySequence, QShortcut, Qt
-        act = QAction("BetterAnki Settings…", mw)
+        act = QAction("Anki Design Settings…", mw)
         # Cmd+, on macOS / Ctrl+, elsewhere — the canonical "preferences" key.
         act.setShortcut(QKeySequence("Ctrl+,"))
         # Use the enum (NOT a literal int — the values differ between Qt5/6).
@@ -1325,7 +1412,7 @@ def _add_tools_menu_action() -> None:
     except Exception as e:
         try:
             from aqt.utils import showWarning
-            showWarning(f"BetterAnki: failed to register settings shortcut: {e}")
+            showWarning(f"Anki Design: failed to register settings shortcut: {e}")
         except Exception:
             pass
 
@@ -1339,7 +1426,7 @@ try:
     _addcard.register()
 except Exception as _e:
     try:
-        print(f"[betteranki] addcard register failed: {_e}", flush=True)
+        print(f"[anki-design] addcard register failed: {_e}", flush=True)
     except Exception:
         pass
 
@@ -1714,7 +1801,7 @@ def _dev_start() -> None:
         return
     _dev_stop.clear()
     _dev_thread = threading.Thread(
-        target=_dev_watch, name="betteranki-devwatch", daemon=True
+        target=_dev_watch, name="anki-design-devwatch", daemon=True
     )
     _dev_thread.start()
 
@@ -1995,7 +2082,7 @@ def _dev_cmd_start() -> None:
     except Exception:
         pass
     t = threading.Thread(
-        target=_dev_cmd_watch, name="betteranki-dev-cmd", daemon=True
+        target=_dev_cmd_watch, name="anki-design-dev-cmd", daemon=True
     )
     t.start()
 

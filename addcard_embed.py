@@ -1,4 +1,4 @@
-"""BetterAnki — embed AddCards inside the main window as a "tab".
+"""Anki Design — embed AddCards inside the main window as a "tab".
 
 Anki opens AddCards as a separate QMainWindow. The user wants it to behave
 like a tab in the main window: the sidebar (rendered inside `mw.web` by the
@@ -45,7 +45,7 @@ from aqt.qt import (
 )
 
 
-SIDEBAR_W = 250  # px — matches web/sidebar.css .ba-sidebar width
+SIDEBAR_W = 264  # px — matches --rf-side-w in web/theme.css
 
 
 def _palette_styles() -> str:
@@ -105,10 +105,23 @@ _state: dict = {"addcards": None, "overlay": None, "filter": None}
 
 
 def close_inline() -> None:
-    """Tear down the embedded view and restore the deck browser."""
+    """Tear down the embedded view and restore the deck browser.
+
+    No-op if there is no embed currently open — so callers (e.g. the
+    moveToState monkey-patch in __init__.py) can call this on every
+    navigation event cheaply."""
     overlay = _state.get("overlay")
     ac = _state.get("addcards")
     flt = _state.get("filter")
+    if overlay is None and ac is None and flt is None:
+        return
+
+    # Clear state FIRST so the patched ac._close (which calls back into
+    # close_inline) returns immediately on its recursive entry.
+    _state["addcards"] = None
+    _state["overlay"] = None
+    _state["filter"] = None
+
     if overlay is not None:
         try:
             if flt is not None:
@@ -120,13 +133,21 @@ def close_inline() -> None:
         except Exception:
             pass
     if ac is not None:
+        # Use AddCards' own teardown method (synchronous). Going through
+        # the public .close() would route via ifCanClose → editor.call_-
+        # after_note_saved, which never completes when we've reparented
+        # the central widget — so `gui_hooks.operation_did_execute.remove(
+        # self.on_operation_did_execute)` inside _close never fires, and
+        # the next operation (any review, edit, sync) tries to call
+        # editor.widget.show() on a deleted C++ widget. Calling _close
+        # directly removes the hook subscription synchronously.
         try:
-            ac.close()
+            ac._close()  # type: ignore[attr-defined]
         except Exception:
-            pass
-    _state["addcards"] = None
-    _state["overlay"] = None
-    _state["filter"] = None
+            try:
+                ac.close()
+            except Exception:
+                pass
     # Restore the sidebar's active tab.
     try:
         w = getattr(mw, "web", None)
@@ -225,7 +246,7 @@ def open_inline(parent_mw: Any = None) -> None:
     except Exception as e:
         import traceback
         print(
-            f"[betteranki.embed] failed: {e}\n{traceback.format_exc()}",
+            f"[anki-design.embed] failed: {e}\n{traceback.format_exc()}",
             flush=True,
         )
         # Best-effort cleanup, then fall back to the standalone window.

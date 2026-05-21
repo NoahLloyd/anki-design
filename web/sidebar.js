@@ -1,12 +1,12 @@
-/* BetterAnki — left sidebar (info + nav).
+/* Anki Design — left sidebar (info + nav).
    Prepends a <aside class="ba-side"> to <body> on every themed page. The
    sidebar shows: identity + today's standing (date, streak, due/new/learning)
    + primary nav + quick actions + sync/settings. Python pushes live data via
    window.__baSetStanding({...}) after each render. */
 (function () {
   "use strict";
-  if (window.__betterankiSide) return;
-  window.__betterankiSide = true;
+  if (window.__ankiDesignSide) return;
+  window.__ankiDesignSide = true;
 
   function send(cmd) {
     try { if (typeof pycmd === "function") pycmd("ba:" + cmd); } catch (e) {}
@@ -54,9 +54,21 @@
     var aside = document.createElement("aside");
     aside.className = "ba-side";
     aside.innerHTML = ''
-      // Wordmark
+      // Wordmark — Anki Design lockup. Rendered as coded markup so the
+      // two-typeface lockup (Helvetica anki + Architects Daughter DESIGN
+      // with red period) scales from a single CSS variable.
       + '<div class="ba-side-head">'
-      +   '<span class="ba-side-mark">Better Anki</span>'
+      +   '<span class="ad-logo ba-side-mark" aria-label="Anki Design">'
+      +     '<span class="ad-mark">anki<span class="ad-dot">.</span></span>'
+      +     '<span class="ad-design">'
+      +       '<span class="ad-d">D</span>'
+      +       '<span class="ad-e">E</span>'
+      +       '<span class="ad-s">S</span>'
+      +       '<span class="ad-i">I</span>'
+      +       '<span class="ad-g">G</span>'
+      +       '<span class="ad-n">N</span>'
+      +     '</span>'
+      +   '</span>'
       + '</div>'
       // Cross-deck totals — hidden in single-deck mode (the hero owns them).
       + '<dl class="ba-side-totals">'
@@ -67,6 +79,24 @@
       +   '<div class="ba-side-stat ba-side-stat--learn">'
       +     '<dt>Learning</dt><dd data-x="learn">—</dd></div>'
       + '</dl>';
+
+    // Wordmark opens anki.design (in the user's default browser, via Python).
+    var mark = aside.querySelector(".ba-side-mark");
+    if (mark) {
+      mark.setAttribute("role", "link");
+      mark.setAttribute("tabindex", "0");
+      mark.setAttribute("title", "anki.design");
+      mark.addEventListener("click", function (e) {
+        e.preventDefault();
+        send("website");
+      });
+      mark.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          send("website");
+        }
+      });
+    }
 
     // Primary nav
     var nav = document.createElement("nav");

@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to BetterAnki are documented here. Format loosely follows
+All notable changes to Anki Design are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versioning is semver-ish.
 
 ## [Unreleased]

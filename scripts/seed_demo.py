@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Seed an isolated demo Anki base with ~4 years of believable review history.
 
-Built for showcasing BetterAnki's heatmap, progress bar, and reviewer chrome:
+Built for showcasing Anki Design's heatmap, progress bar, and reviewer chrome:
 the demo decks match the largest Anki user groups (med students using the
 AnKing-style workflow, language learners, geography buffs, CS students), and
 each card carries a per-day revlog history that lights up the heatmap.
@@ -9,7 +9,7 @@ each card carries a per-day revlog history that lights up the heatmap.
 Safety
 ------
 - Default target is a separate base at
-  ~/Library/Application Support/Anki2-dev/betteranki-demo
+  ~/Library/Application Support/Anki2-dev/anki-design-demo
   that is touched ONLY by this script. Your real ~/Library/Application
   Support/Anki2 collection is never opened, read, or modified.
 - The script refuses to run if the resolved target is the real Anki2 base.
@@ -18,7 +18,7 @@ Safety
 
 Usage
 -----
-    # From the betteranki worktree root:
+    # From the anki-design worktree root:
     "$HOME/Library/Application Support/AnkiProgramFiles/.venv/bin/python" \\
         scripts/seed_demo.py
 
@@ -52,7 +52,7 @@ except ImportError:  # pragma: no cover - friendly error for wrong interpreter
 
 REAL_BASE = Path.home() / "Library" / "Application Support" / "Anki2"
 DEFAULT_DEMO_BASE = (
-    Path.home() / "Library" / "Application Support" / "Anki2-dev" / "betteranki-demo"
+    Path.home() / "Library" / "Application Support" / "Anki2-dev" / "anki-design-demo"
 )
 PROFILE_NAME = "User 1"
 
@@ -1267,6 +1267,64 @@ DECKS = [
 
 
 # ---------------------------------------------------------------------------
+# Variants — different demo profiles with different deck counts.
+#
+# Each variant picks a subset of DECKS (by deck name) and tunes the "due
+# right now" backlog size. The simulator itself is shared; the variant just
+# controls how many decks/cards the user has + how big the "today" pile is.
+#
+#   single  — one deck (Spanish vocab, the biggest). Showcases the reviewer
+#             chrome with a single deck home (no deck table). ~225 cards.
+#   three   — three decks across two themes. ~418 cards. Mid-density demo.
+#   full    — every deck. ~1100 cards. Best for the deck-table demo +
+#             impressive heatmap.
+#
+# `due_pct` is the fraction of reviewed cards we snap into the "due today
+# or in the last week" pile. A high pct → the user lands on a fat queue
+# when they open the demo (which is the whole point of the demo).
+# ---------------------------------------------------------------------------
+
+VARIANTS = {
+    "single": {
+        "decks": ["Languages::Spanish — Top words"],
+        "due_pct": 0.55,
+    },
+    "three": {
+        "decks": [
+            "Languages::Spanish — Top words",
+            "Languages::Japanese — JLPT N5",
+            "Medicine::Pathology & Clinical",
+        ],
+        "due_pct": 0.45,
+    },
+    "full": {
+        "decks": None,  # all of them
+        "due_pct": 0.40,
+    },
+}
+
+
+def decks_for_variant(name: str) -> list:
+    """Return the subset of DECKS for the named variant.
+
+    Raises SystemExit with a friendly message if `name` is unknown."""
+    if name not in VARIANTS:
+        raise SystemExit(
+            f"unknown variant {name!r}. Known: {', '.join(sorted(VARIANTS))}"
+        )
+    wanted = VARIANTS[name]["decks"]
+    if wanted is None:
+        return list(DECKS)
+    by_name = {d[0]: d for d in DECKS}
+    missing = [n for n in wanted if n not in by_name]
+    if missing:
+        raise SystemExit(
+            f"variant {name!r} references unknown deck(s): {missing}"
+        )
+    return [by_name[n] for n in wanted]
+
+
+# ---------------------------------------------------------------------------
 # Revlog simulation — DAY-DRIVEN, PHASED.
 #
 # Models a real Anki power-user trajectory across multiple years:
@@ -1527,7 +1585,7 @@ def simulate_days(
                 st.lapses += 1
                 rows.append(_revlog_row(ts, cid, seq, ease=ease, ivl=-600,
                                         last_ivl=last_ivl, factor=new_factor,
-                                        time_ms=rng.randint(3000, 14000),
+                                        time_ms=rng.randint(7000, 28000),
                                         rtype=rtype))
                 st.ivl_days = 1
                 st.due_day = d + 1
@@ -1535,7 +1593,7 @@ def simulate_days(
                 rtype = 1  # review
                 rows.append(_revlog_row(ts, cid, seq, ease=ease, ivl=new_ivl,
                                         last_ivl=last_ivl, factor=new_factor,
-                                        time_ms=rng.randint(2500, 16000),
+                                        time_ms=rng.randint(6000, 30000),
                                         rtype=rtype))
                 st.ivl_days = new_ivl
                 # Add ±15% fuzz to scheduled next due (mimics Anki's fuzz).
@@ -1554,7 +1612,7 @@ def simulate_days(
             rows.append(_revlog_row(ts, cid, seq, ease=ease,
                                     ivl=st.ivl_days, last_ivl=st.ivl_days,
                                     factor=st.factor,
-                                    time_ms=rng.randint(1500, 7000),
+                                    time_ms=rng.randint(4000, 14000),
                                     rtype=4))  # 4 = manual / cram
             st.reps += 1
             seq += 1
@@ -1568,7 +1626,7 @@ def simulate_days(
             ts1 = day_start_ts + rng.randint(8 * 3600, 21 * 3600)
             rows.append(_revlog_row(ts1, cid, seq, ease=ease1, ivl=-600,
                                     last_ivl=0, factor=2500,
-                                    time_ms=rng.randint(4000, 14000),
+                                    time_ms=rng.randint(8000, 28000),
                                     rtype=0))
             seq += 1
             # Step 2: graduate to 1-day interval
@@ -1577,7 +1635,7 @@ def simulate_days(
             rows.append(_revlog_row(ts2, cid, seq, ease=ease2,
                                     ivl=1 if ease2 != 1 else -600,
                                     last_ivl=-600, factor=2500,
-                                    time_ms=rng.randint(3000, 12000),
+                                    time_ms=rng.randint(6000, 24000),
                                     rtype=0))
             seq += 1
             st.factor = 2500
@@ -1600,6 +1658,9 @@ def parse_args() -> argparse.Namespace:
                    help=f"Anki base dir (default: {DEFAULT_DEMO_BASE})")
     p.add_argument("--profile", default=PROFILE_NAME,
                    help=f"Profile inside the base (default: {PROFILE_NAME})")
+    p.add_argument("--variant", default="full",
+                   choices=sorted(VARIANTS),
+                   help="Which demo variant to seed (default: full)")
     p.add_argument("--years", type=float, default=5.5,
                    help="Span of simulated history, in years (default: 5.5)")
     p.add_argument("--seed", type=int, default=20260521,
@@ -1650,18 +1711,21 @@ def prepare_base(base: Path, profile: str, force: bool) -> Path:
     return col_path
 
 
-def seed_collection(col_path: Path, years: float, rng: random.Random) -> dict:
+def seed_collection(col_path: Path, years: float, rng: random.Random,
+                    variant: str = "full") -> dict:
     """Open a fresh collection at col_path and populate it.
 
     Returns a stats dict for the caller to print.
     """
+    decks = decks_for_variant(variant)
+    due_pct = VARIANTS[variant]["due_pct"]
     col = Collection(str(col_path))
     try:
         # Build all decks + notes
         deck_ids_by_name: dict[str, int] = {}
         all_card_ids: list[int] = []
 
-        for deck_name, notetype_name, entries in DECKS:
+        for deck_name, notetype_name, entries in decks:
             did = col.decks.id(deck_name)
             assert did is not None
             deck_ids_by_name[deck_name] = did
@@ -1739,16 +1803,25 @@ def seed_collection(col_path: Path, years: float, rng: random.Random) -> dict:
             card_updates,
         )
 
-        # Force a meaningful "due now" pile so the reviewer has work to do
-        # when the user opens the app. Pick ~30-60 already-reviewed cards
-        # and snap their due day to today (or just before).
+        # Build a realistic "today + recent" due pile. Without this the
+        # simulator's natural rhythm leaves only a handful of cards on
+        # today (every other day's reviews advance their due_day forward).
+        # We snap `due_pct` of the reviewed cards into the last week's
+        # window, weighted toward today — so the demo opens with a fat
+        # queue that justifies a 300–500-review day.
         cards_with_history = [cid for cid in final_state
                               if final_state[cid].introduced_day != -1]
-        due_now_count = min(40, max(20, len(cards_with_history) // 12))
-        for cid in rng.sample(cards_with_history, due_now_count):
+        due_target = min(len(cards_with_history),
+                         max(40, int(len(cards_with_history) * due_pct)))
+        # Distribution across the last 8 days: mostly today, then a thin
+        # tail of "I missed yesterday" overdue cards. Weights add to 100.
+        day_offsets = [0, -1, -2, -3, -4, -5, -6, -7]
+        day_weights = [55, 14, 9, 7, 5, 4, 3, 3]
+        for cid in rng.sample(cards_with_history, due_target):
+            offset = rng.choices(day_offsets, weights=day_weights, k=1)[0]
             col.db.execute(
                 "UPDATE cards SET due=?, queue=2, type=2 WHERE id=?",
-                today_idx + rng.randint(-1, 1), cid,
+                today_idx + offset, cid,
             )
 
         col.db.execute("ANALYZE")
@@ -1760,7 +1833,7 @@ def seed_collection(col_path: Path, years: float, rng: random.Random) -> dict:
         ) or 0
 
         stats = {
-            "decks": len(DECKS),
+            "decks": len(decks),
             "notes": col.db.scalar("select count(*) from notes") or 0,
             "cards": col.db.scalar("select count(*) from cards") or 0,
             "revlog": col.db.scalar("select count(*) from revlog") or 0,
@@ -1786,6 +1859,7 @@ def main() -> int:
 
     print(f"seed_demo → base: {args.base}")
     print(f"           profile: {args.profile}")
+    print(f"           variant: {args.variant}")
     print(f"           history span: {args.years:g} years")
     if args.force:
         print(f"           --force: existing demo data will be removed")
@@ -1794,7 +1868,7 @@ def main() -> int:
 
     rng = random.Random(args.seed)
     t0 = time.monotonic()
-    stats = seed_collection(col_path, args.years, rng)
+    stats = seed_collection(col_path, args.years, rng, variant=args.variant)
     elapsed = time.monotonic() - t0
 
     print()
