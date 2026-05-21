@@ -117,9 +117,30 @@ body.ba-with-side {
   align-items: center;
   gap: 12px;
   width: 100%;
-  background: transparent;
-  border: 0;
-  border-radius: 7px;
+  /* Anki's webview.css ships `.fancy button` (specificity 0,0,1,1) which
+     adds a 3-layer drop shadow + gradient background, and `.fancy button:hover`
+     (0,0,2,1) which swaps to a heavier hover shadow. Both beat a plain
+     `.ba-side-item` rule (0,0,1,0), so the sidebar rows pick up Anki's pill
+     chrome unless we override with at least equal specificity *and* cover
+     every interaction state — hence the `!important`s. Same pattern the
+     congrats overlay used; moving it here makes the sidebar tab-flat on
+     every page (deck browser, overview, reviewer, addcard) without each
+     page needing its own copy. */
+  --canvas: transparent;
+  background: transparent !important;
+  background-image: none !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  /* Anki's `button { margin: 0 4px }` (in webview.css) was shrinking every
+     <button> row by 8px total — the New deck <div> wasn't affected, so it
+     was the only row whose hover/active fill reached the divider lines.
+     Zero the margin so every row is the same full width as the rules. */
+  margin: 0 !important;
+  /* Anki's `.fancy button` also sets `border-radius: var(--border-radius-large)`
+     (15px) which beats `.ba-side-item` on plain specificity, so the <button>
+     rows rendered as half-pills while the New deck <div> stayed at 7px.
+     !important here unifies the radius across both element types. */
+  border-radius: 7px !important;
   padding: 10px 12px;        /* more vertical space per item */
   /* Lock the item box so nothing — font-size overrides, sub-pixel
      rounding, browser default :hover styles — can change its height.
@@ -148,21 +169,14 @@ body.ba-with-side {
    change, no icon-color change, no font-weight, no transform. The bg fade
    alone signals interactivity without any optical weight shift. */
 .ba-side-item:hover {
-  background: var(--rf-row-hover);
+  background: var(--rf-row-hover) !important;
 }
 
 .ba-side-item[data-active="true"] {
   color: var(--rf-ink);
-  background: var(--rf-row-current);
+  background: var(--rf-row-current) !important;
 }
 .ba-side-item[data-active="true"] .ba-side-icon { color: var(--rf-ink); }
-.ba-side-item[data-active="true"]::before {
-  content: "";
-  position: absolute;
-  left: 0; top: 8px; bottom: 8px;
-  width: 2px; border-radius: 2px;
-  background: var(--rf-accent, #6c8cff);
-}
 
 /* Quick actions — slightly lighter weight to read as actions. The fixed
    height on .ba-side-item keeps these the same row height as the nav,
