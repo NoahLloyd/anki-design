@@ -1197,6 +1197,23 @@ def _dev_screenshot(request_path: str) -> None:
                 pass
         if click_cog:
             QTimer.singleShot(700, _click_cog)
+        # Optionally trigger the in-page note-type picker so the dropdown is
+        # visible in the screenshot.
+        click_type = bool(req.get("click_type"))
+        def _click_type() -> None:
+            try:
+                from aqt import dialogs
+                from PyQt6.QtWidgets import QPushButton as _QPB
+                ac = dialogs._dialogs.get("AddCards", [None, None])[1]
+                if ac is None:
+                    return
+                btns = ac.form.modelArea.findChildren(_QPB)
+                if btns:
+                    btns[0].click()
+            except Exception:
+                pass
+        if click_type:
+            QTimer.singleShot(800, _click_type)
 
         # Give the WebEngine view time to render (templates load async).
         # 1500ms is conservative; the editor.html bundle plus Svelte hydration
