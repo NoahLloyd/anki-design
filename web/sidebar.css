@@ -516,6 +516,12 @@ body.ba-with-side {
   opacity: 1;
   transform: translateY(-50%) translateX(0);
 }
+/* When sync is in pending (blue) mode, the dot owns the right edge — the
+   "Y" chip would overlap it on hover, so suppress the chip. */
+.ba-side-item[data-cmd="sync"].ba-sync-pending:hover .ba-side-key {
+  opacity: 0;
+  transform: translateY(-50%) translateX(6px);
+}
 
 /* ---------------------------- FLOATING COG ---------------------------- */
 .ba-cog {
