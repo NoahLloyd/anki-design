@@ -16,6 +16,7 @@ FILL_FLAG="false"
 COG_FLAG="false"
 HOVER_FLAG="false"
 TYPE_FLAG="false"
+EMBED_FLAG="false"
 for arg in "$@"; do
   case "$arg" in
     --open-addcards) OPEN_FLAG="true" ;;
@@ -23,6 +24,7 @@ for arg in "$@"; do
     --click-cog) COG_FLAG="true" ;;
     --hover-add) HOVER_FLAG="true" ;;
     --click-type) TYPE_FLAG="true" ;;
+    --embed-add) OPEN_FLAG="true"; EMBED_FLAG="true" ;;
   esac
 done
 
@@ -41,6 +43,7 @@ cat > "$REQ" <<JSON
   "fill_sample": ${FILL_FLAG},
   "click_cog": ${COG_FLAG},
   "click_type": ${TYPE_FLAG},
+  "embed_add": ${EMBED_FLAG},
   "delay_ms": 2000
 }
 JSON

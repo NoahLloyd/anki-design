@@ -555,9 +555,23 @@ def _on_js_message(handled, message, context):
     cmd = message[3:]
     try:
         if cmd == "decks":
+            # If we're in the embedded Add view, close it first so the deck
+            # browser becomes visible again.
+            try:
+                from . import addcard_embed
+                addcard_embed.close_inline()
+            except Exception:
+                pass
             mw.moveToState("deckBrowser")
         elif cmd == "add":
-            mw.onAddCard()
+            # Open AddCards inside the main window (over the deck area, to
+            # the right of the sidebar). Falls back to the standard window
+            # if the embed setup fails.
+            try:
+                from . import addcard_embed
+                addcard_embed.open_inline(mw)
+            except Exception:
+                mw.onAddCard()
         elif cmd == "browse":
             mw.onBrowse()
         elif cmd == "stats":
@@ -1106,9 +1120,14 @@ def _dev_screenshot(request_path: str) -> None:
         return
     try:
         from aqt.qt import QApplication, QTimer
+        embed_add = bool(req.get("embed_add"))
         if open_addcards:
             try:
-                mw.onAddCard()
+                if embed_add:
+                    from . import addcard_embed
+                    addcard_embed.open_inline(mw)
+                else:
+                    mw.onAddCard()
             except Exception:
                 pass
         # Optional: pre-fill the fields with sample text so we can validate

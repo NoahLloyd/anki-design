@@ -538,8 +538,8 @@ def _redress(addcards: AddCards) -> None:
             except Exception:
                 pass
             # Re-apply chevron in case Anki updated the chooser label text.
-            _stylize(nt_area)
-            _stylize(dk_area)
+            _stylize(nt_area, "notetype")
+            _stylize(dk_area, "deck")
         t.timeout.connect(_tick)
         t.start()
         addcards._ba_history_timer = t  # keep ref
