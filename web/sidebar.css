@@ -1,4 +1,4 @@
-/* BetterAnki — left sidebar.
+/* Anki Design — left sidebar.
    Vertical layered structure: wordmark · totals · nav · quick · (stretch) ·
    streak block · footer. Sections separated by subtle rules + breathing
    space. Standing data is bootstrapped from window.__baStandingData and
@@ -46,10 +46,12 @@ body.ba-with-side {
 .ba-side-head {
   padding: 0 4px 18px;
 }
-.ba-side-mark {
-  font: 500 18px/1 var(--rf-serif);
-  letter-spacing: -0.005em;
-  color: var(--rf-ink);
+/* The wordmark itself is rendered as the .ad-logo lockup (web/logo.css).
+   Here we just position it in the rail at the right size and pin the ink
+   color to the current theme's --rf-ink. */
+.ba-side-mark.ad-logo {
+  --ad-logo-size: 20px;
+  --ad-logo-ink: var(--rf-ink);
 }
 
 /* ---------------------------- CROSS-DECK TOTALS ---------------------------- */
@@ -112,8 +114,16 @@ body.ba-with-side {
   border: 0;
   border-radius: 7px;
   padding: 10px 12px;        /* more vertical space per item */
+  /* Lock the item box so nothing — font-size overrides, sub-pixel
+     rounding, browser default :hover styles — can change its height.
+     Padding 10 + 12.5 line + 10 = 32.5 → 34 with a tiny optical buffer. */
+  height: 34px;
+  box-sizing: border-box;
   text-align: left;
-  font: 500 12.5px/1 var(--rf-sans);
+  font-weight: 500;
+  font-size: 12.5px;
+  line-height: 14px;
+  font-family: var(--rf-sans);
   letter-spacing: 0.005em;
   color: var(--rf-ink-dim);
   cursor: pointer;
@@ -147,7 +157,9 @@ body.ba-with-side {
   background: var(--rf-accent, #6c8cff);
 }
 
-/* Quick actions — slightly lighter weight to read as actions. */
+/* Quick actions — slightly lighter weight to read as actions. The fixed
+   height on .ba-side-item keeps these the same row height as the nav,
+   even with a smaller font-size. */
 .ba-side-act {
   font-size: 12px !important;
   color: var(--rf-ink-faint) !important;

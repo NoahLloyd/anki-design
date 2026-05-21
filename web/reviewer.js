@@ -1,4 +1,4 @@
-// BetterAnki — reviewer progress bar + body cleanup + answer-reveal wrap.
+// Anki Design — reviewer progress bar + body cleanup + answer-reveal wrap.
 (function () {
   function cleanupBody() {
     if (!document.body) return;

@@ -1,4 +1,4 @@
-/* BetterAnki — Add Card editor webview overlay.
+/* Anki Design — Add Card editor webview overlay.
  *
  * Restyles the Svelte note editor *only* when running inside the AddCards
  * window (data-ba-editor="add"). Anki's own editor.css uses Bootstrap-ish

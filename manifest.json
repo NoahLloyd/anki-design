@@ -1,6 +1,6 @@
 {
-  "name": "BetterAnki",
-  "package": "betteranki",
+  "name": "Anki Design",
+  "package": "anki-design",
   "human_version": "0.1.0",
   "conflicts": [
     "1011095603",

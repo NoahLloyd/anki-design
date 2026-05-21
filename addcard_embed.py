@@ -1,4 +1,4 @@
-"""BetterAnki — embed AddCards inside the main window as a "tab".
+"""Anki Design — embed AddCards inside the main window as a "tab".
 
 Anki opens AddCards as a separate QMainWindow. The user wants it to behave
 like a tab in the main window: the sidebar (rendered inside `mw.web` by the
@@ -225,7 +225,7 @@ def open_inline(parent_mw: Any = None) -> None:
     except Exception as e:
         import traceback
         print(
-            f"[betteranki.embed] failed: {e}\n{traceback.format_exc()}",
+            f"[anki-design.embed] failed: {e}\n{traceback.format_exc()}",
             flush=True,
         )
         # Best-effort cleanup, then fall back to the standalone window.

@@ -1,4 +1,4 @@
-/* BetterAnki — design tokens.
+/* Anki Design — design tokens.
    Anki 25.x colors every built-in component (deck browser, toolbar, bottom
    bars, overview, reviewer chrome) through these CSS custom properties.
    Overriding them here recolors Anki's own UI coherently instead of fighting

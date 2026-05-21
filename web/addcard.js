@@ -1,4 +1,4 @@
-// BetterAnki — Add Card editor webview script.
+// Anki Design — Add Card editor webview script.
 //
 // Tags <html> so addcard.css can scope its overrides to the editor when it's
 // being shown in the AddCards window (not Browser, not Edit-Current). Anki's

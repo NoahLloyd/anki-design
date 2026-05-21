@@ -1,4 +1,4 @@
-/* BetterAnki — reviewer card-area chrome.
+/* Anki Design — reviewer card-area chrome.
    We don't touch card content (note-type CSS is sacred), but we own the
    surrounding chrome: page background, body typography, the answer divider,
    the top header, progress strip, and the back affordance. The goal is a
