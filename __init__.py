@@ -750,7 +750,11 @@ def _on_js_message(handled, message, context):
             except Exception:
                 return handled
         elif cmd == "create":
-            _open_new_deck()
+            _focus_inline_new_deck()
+        elif cmd == "create-fallback":
+            _open_new_deck_dialog()
+        elif cmd.startswith("create:"):
+            _create_deck_inline(cmd.split(":", 1)[1])
         elif cmd == "import":
             mw.onImport()
         elif cmd.startswith("study:"):
@@ -809,17 +813,50 @@ def _on_js_message(handled, message, context):
     return (True, None)
 
 
-def _open_new_deck() -> None:
-    """Open the standard New Deck dialog (same one Anki uses)."""
+def _focus_inline_new_deck() -> None:
+    """Focus the inline create input in the sidebar. Falls back to Anki's
+    native dialog if the sidebar isn't reachable (other page, JS not loaded)."""
+    web = getattr(mw, "web", None)
+    state = getattr(mw, "state", "")
+    if web is not None and state in ("deckBrowser", "overview"):
+        try:
+            web.eval(
+                "if (window.__baFocusNewDeck) window.__baFocusNewDeck();"
+                "else pycmd('ba:create-fallback');"
+            )
+            return
+        except Exception:
+            pass
+    _open_new_deck_dialog()
+
+
+def _open_new_deck_dialog() -> None:
+    """Last-resort fallback: open Anki's native New Deck dialog."""
     try:
         from aqt.operations.deck import add_deck_dialog
         add_deck_dialog(parent=mw)
     except Exception:
         try:
-            # Fallback for older Anki APIs.
             mw.deckBrowser._on_create()  # type: ignore[attr-defined]
         except Exception:
             pass
+
+
+def _create_deck_inline(name: str) -> None:
+    """Create a deck by name from the inline sidebar input. `decks.id(name,
+    create=True)` is idempotent — a duplicate name returns the existing id,
+    so no pre-check is needed."""
+    name = (name or "").strip()
+    if not name:
+        return
+    try:
+        mw.col.decks.id(name, create=True)
+    except Exception:
+        return
+    try:
+        mw.reset()
+    except Exception:
+        pass
 
 
 def _start_studying(did: int) -> None:
@@ -1604,9 +1641,10 @@ def _dev_screenshot(request_path: str) -> None:
                 except Exception:
                     pass
                 return
+            # No raise_/activateWindow: widget.grab() renders offscreen via Qt's
+            # backing store, so the window doesn't need focus or to be on top.
+            # Surfacing it would steal focus from whatever the user is doing.
             try:
-                widget.raise_()
-                widget.activateWindow()
                 QApplication.processEvents()
             except Exception:
                 pass
@@ -1719,16 +1757,24 @@ def _dev_dump(request_path: str) -> None:
     try:
         from aqt.qt import QApplication
         widget = None
-        for w in QApplication.topLevelWidgets():
-            try:
-                if not w.isVisible():
+        web = None
+        if target_title in ("main", "mw"):
+            widget = mw
+            # mw has multiple QWebEngineViews (toolbarWeb, web, bottomWeb).
+            # findChild() returns whichever was constructed first — usually
+            # the toolbar — which gives a useless 1-line DOM. Pin to mw.web.
+            web = getattr(mw, "web", None)
+        else:
+            for w in QApplication.topLevelWidgets():
+                try:
+                    if not w.isVisible():
+                        continue
+                    title = (w.windowTitle() or "").lower()
+                    if target_title and target_title in title:
+                        widget = w
+                        break
+                except Exception:
                     continue
-                title = (w.windowTitle() or "").lower()
-                if target_title and target_title in title:
-                    widget = w
-                    break
-            except Exception:
-                continue
         if widget is None:
             with open(out, "w") as fh:
                 fh.write(f"<!-- no widget for title={target_title!r} -->")
@@ -1737,7 +1783,8 @@ def _dev_dump(request_path: str) -> None:
             from aqt.qt import QWebEngineView  # type: ignore
         except Exception:
             from PyQt6.QtWebEngineWidgets import QWebEngineView  # type: ignore
-        web = widget.findChild(QWebEngineView)
+        if web is None:
+            web = widget.findChild(QWebEngineView)
         if web is None:
             with open(out, "w") as fh:
                 fh.write("<!-- no QWebEngineView found -->")
@@ -1897,6 +1944,23 @@ def _dev_run_cmd(raw: str) -> None:
             rv = getattr(mw, "reviewer", None)
             if rv and getattr(rv, "bottom", None) and getattr(rv.bottom, "web", None):
                 rv.bottom.web.eval(js)
+        elif cmd == "reload_page":
+            # Force a full webview reload — addon JS changes don't propagate
+            # via the CSS-only hot-reload; reload picks them up cleanly.
+            try:
+                if getattr(mw, "web", None) is not None:
+                    mw.web.reload()
+            except Exception as e:
+                _dev_cmd_log(f"reload_page err: {e!r}")
+        elif cmd == "decks_list":
+            try:
+                names = [d.name for d in mw.col.decks.all_names_and_ids()]
+                _dev_cmd_log(f"decks: {names}")
+            except Exception as e:
+                _dev_cmd_log(f"decks err: {e!r}")
+        elif cmd.startswith("create_test:"):
+            _create_deck_inline(cmd.split(":", 1)[1])
+            _dev_cmd_log(f"create_test ran for: {cmd.split(':',1)[1]!r}")
         elif cmd.startswith("state_info"):
             try:
                 st = getattr(mw, "state", "")

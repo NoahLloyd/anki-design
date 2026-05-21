@@ -178,6 +178,96 @@ body.ba-with-side {
 
 /* Streak block + lifetime stats moved out of the sidebar; styles deleted. */
 
+/* ---------------------------- NEW DECK ROW ----------------------------
+   Morphing inline-create row. Idle: same shape as .ba-side-act. Active:
+   the label slot swaps for a borderless text input — Enter creates the
+   deck via pycmd("ba:create:<name>"). The icon is the only stable
+   anchor; everything else cross-fades in the same flex slot so nothing
+   in the row moves. State is held on the row via data-state. */
+.ba-side-newdeck { cursor: pointer; }
+.ba-side-newdeck[data-state="active"] { cursor: text; }
+.ba-side-newdeck:focus-visible { outline: none; }
+.ba-side-newdeck:focus-visible .ba-side-newdeck-label {
+  /* When the row itself is keyboard-focused in idle, lift the label tone
+     to mirror :hover — a clearer "I'll respond" affordance. */
+  color: var(--rf-ink-dim);
+}
+
+/* The shared label/input slot. Has its own line-height so it doesn't
+   collapse when both children are absolutely positioned. */
+.ba-side-newdeck-swap {
+  position: relative;
+  flex: 1;
+  height: 14px;
+  line-height: 14px;
+}
+
+.ba-side-newdeck-label,
+.ba-side-newdeck-input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+  width: 100%;
+  transition:
+    opacity 180ms ease,
+    transform 220ms cubic-bezier(.2, .8, .2, 1);
+}
+.ba-side-newdeck-input {
+  caret-color: var(--rf-accent, #6c8cff);
+  color: var(--rf-ink);
+}
+.ba-side-newdeck-input::placeholder {
+  color: var(--rf-ink-faint);
+  font-style: italic;
+}
+/* Idle: label visible, input tucked. */
+.ba-side-newdeck[data-state="idle"] .ba-side-newdeck-input {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-4px);
+}
+.ba-side-newdeck[data-state="idle"] .ba-side-newdeck-label {
+  opacity: 1;
+  transform: translateX(0);
+}
+/* Active: input visible, label tucked. The icon warms to the accent so
+   the row reads as "alive" without resizing. */
+.ba-side-newdeck[data-state="active"] {
+  background: var(--rf-row-hover);
+}
+.ba-side-newdeck[data-state="active"] .ba-side-newdeck-label {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(4px);
+}
+.ba-side-newdeck[data-state="active"] .ba-side-newdeck-input {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(0);
+}
+.ba-side-newdeck[data-state="active"] .ba-side-icon {
+  color: var(--rf-accent, #6c8cff);
+  transform: rotate(0deg) scale(1.08);
+  transition: color 220ms ease, transform 220ms cubic-bezier(.2, .8, .2, 1);
+}
+.ba-side-newdeck .ba-side-icon {
+  transition: color 220ms ease, transform 220ms cubic-bezier(.2, .8, .2, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ba-side-newdeck-label,
+  .ba-side-newdeck-input,
+  .ba-side-newdeck .ba-side-icon {
+    transition: none;
+  }
+}
+
 /* ---------------------------- SYNC ----------------------------
    Three states the sidebar reflects:
    • pending  — local changes to push; soft accent dot, slow breathe
