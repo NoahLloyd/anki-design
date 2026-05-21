@@ -327,10 +327,68 @@ body::before {
   color: var(--rf-accent, #6c8cff) !important;
   font-style: italic;
 }
-/* Collapse indicator (`+` / `-`) on parent decks. Hidden: clicking the
-   row goes straight to studying, so the toggle has no place here. */
-.ba-home a.collapse,
-.ba-home span.collapse { display: none !important; }
+/* Parent-deck chevron — decktree.js replaces Anki's `+/-` text toggle
+   with .ad-chev on parent rows and .ad-spacer on leaf rows so deck
+   names align across siblings. Anything still carrying just `.collapse`
+   (a transient pre-wire state, or a future Anki rendering) is hidden
+   so nothing leaks through. */
+.ba-home a.collapse:not(.ad-chev),
+.ba-home span.collapse:not(.ad-spacer) { display: none !important; }
+
+.ba-home a.collapse.ad-chev {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin: 0 6px 0 -2px;
+  vertical-align: middle;
+  border-radius: 6px;
+  color: var(--rf-ink-faint);
+  background: transparent;
+  text-decoration: none !important;
+  -webkit-user-select: none;
+  user-select: none;
+  transition:
+    color 160ms ease,
+    background 160ms ease,
+    transform 240ms cubic-bezier(.2, .8, .2, 1);
+}
+.ba-home a.collapse.ad-chev svg {
+  width: 12px;
+  height: 12px;
+  transform: rotate(0deg);
+  transform-origin: 50% 50%;
+  transition: transform 240ms cubic-bezier(.2, .8, .2, 1);
+}
+/* Default state (expanded) → chevron points down (matches chevron-down.svg).
+   Collapsed → rotate -90° so it points right (closed disclosure). */
+.ba-home a.collapse.ad-chev.ad-collapsed svg { transform: rotate(-90deg); }
+/* The row itself also gets a (very faint) hover background; the chevron
+   needs to read above that, so we use --rf-line for a noticeable lift. */
+.ba-home a.collapse.ad-chev:hover {
+  color: var(--rf-ink-strong);
+  background: var(--rf-line);
+}
+.ba-home a.collapse.ad-chev:active svg { transform: scale(.88); }
+.ba-home a.collapse.ad-chev.ad-collapsed:active svg {
+  transform: rotate(-90deg) scale(.88);
+}
+
+/* Leaf rows get a transparent placeholder sized to the chevron so deck
+   names at the same level line up whether or not the sibling is a parent. */
+.ba-home span.collapse.ad-spacer {
+  display: inline-block;
+  width: 22px;
+  margin: 0 6px 0 -2px;
+  vertical-align: middle;
+}
+
+/* Hidden descendant rows — collapsed instantly (table-row height
+   transitions are not reliable in tables). The chevron rotation carries
+   the visual feedback. */
+.ba-home tr.deck.ad-hidden { display: none; }
+
 /* Whole row is a study target — make that intent visible on hover. */
 .ba-home tr.deck { cursor: pointer; }
 .ba-home tr.deck td.opts,
