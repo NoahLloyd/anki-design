@@ -1,12 +1,17 @@
 {
   "theme": "system",
   "accent": "#6c8cff",
+  "density": "comfortable",
   "sidebar_nav": true,
   "show_heatmap": true,
   "show_progress": true,
+  "show_streak": true,
   "hide_bottom_on_decks": true,
   "hide_bottom_on_overview": true,
   "heatmap_weeks": 53,
+  "heatmap_palette": "accent",
+  "reviewer_card_width": "medium",
+  "reviewer_font_size": "medium",
   "font_serif": "",
   "font_sans": ""
 }
