@@ -1,12 +1,14 @@
-# BetterAnki
+# Anki Design
 
 A from-scratch Anki UI redesign add-on. One cohesive thing you control,
 replacing Onigiri + a separate progress bar + a separate heatmap.
 
+Home: <https://anki.design>
+
 ## How it works
 
 Anki renders the deck list, overview, and reviewer as Chromium web views.
-BetterAnki injects `web/theme.css` into them via the `webview_will_set_content`
+Anki Design injects `web/theme.css` into them via the `webview_will_set_content`
 hook, sets `--rf-accent` from config in `<head>`, renders the heatmap
 server-side in `__init__.py` (from the `revlog` table) and appends it to the
 deck browser, and drives a small reviewer progress-bar widget from Python.
@@ -28,7 +30,8 @@ No network calls, no bundled binaries — keeps AnkiWeb review trivial.
 | `web/reviewer.css` / `.js` | progress bar |
 | `config.json` / `config.md` | user-facing settings + their help text |
 | `manifest.json` | name, version, `conflicts` with rival add-ons |
-| `build.py` / `Makefile` | produce `dist/betteranki.ankiaddon` |
+| `build.py` / `Makefile` | produce `dist/anki-design.ankiaddon` |
+| `web/logo.css` / `web/fonts/` | the "anki.DESIGN" wordmark lockup |
 
 ## Dev loop
 
@@ -71,7 +74,7 @@ make demo-stop  # quit demo Anki
 make demo-clean # remove the entire demo base
 ```
 
-`make demo` builds a *separate* `betteranki-demo` base under
+`make demo` builds a *separate* `anki-design-demo` base under
 `Anki2-dev/`, populated by `scripts/seed_demo.py` with eleven themed decks
 (USMLE pathology/pharm, Spanish, Japanese N5, periodic table, world & US
 capitals, etc.) and ~4 years of day-by-day revlog history. Your real
@@ -100,7 +103,7 @@ Other targets:
 ## Building for AnkiWeb
 
 ```
-make build      # -> dist/betteranki.ankiaddon
+make build      # -> dist/anki-design.ankiaddon
 ```
 
 The `.ankiaddon` is a zip with files at the root; `__pycache__`, `meta.json`,
@@ -112,9 +115,9 @@ The `.ankiaddon` is a zip with files at the root; `__pycache__`, `meta.json`,
 2. Go to the shared add-ons area and choose to upload a new add-on.
 3. Fill in title, tags, description, and a support page URL (the GitHub repo /
    issues link is fine).
-4. Upload `dist/betteranki.ankiaddon`.
+4. Upload `dist/anki-design.ankiaddon`.
 5. The first upload creates the listing and assigns a **numeric ID** — that
-   becomes the install code *and* the installed folder name. BetterAnki already
+   becomes the install code *and* the installed folder name. Anki Design already
    resolves its own folder at runtime, so this is safe.
 6. Later releases: bump `human_version` in `manifest.json`, update
    `CHANGELOG.md`, `make build`, re-upload to the same listing.

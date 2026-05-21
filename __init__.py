@@ -1,4 +1,4 @@
-"""BetterAnki — a from-scratch Anki UI redesign.
+"""Anki Design — a from-scratch Anki UI redesign.
 
   * override Anki's design tokens so its own components recolor coherently
   * redesign the deck homepage (card rows, count chips, integrated actions)
@@ -242,6 +242,7 @@ def on_webview_will_set_content(web_content: WebContent, context: Optional[Any])
     if cfg.get("sidebar_nav", True) and isinstance(
         context, (DeckBrowser, Overview)
     ):
+        web_content.css.append(f"{WEB}/logo.css")
         web_content.css.append(f"{WEB}/sidebar.css")
         web_content.js.append(f"{WEB}/sidebar.js")
         # Embed the standing data in <head> as a global so sidebar.js reads
@@ -261,7 +262,7 @@ def on_webview_will_set_content(web_content: WebContent, context: Optional[Any])
         web_content.css.append(f"{WEB}/sidebar.css")  # for .ba-cog
         web_content.body = (
             '<button class="ba-cog" onclick="pycmd(\'ba:settings\')" '
-            'title="BetterAnki settings">⚙</button>' + web_content.body
+            'title="Anki Design settings">⚙</button>' + web_content.body
         )
     # Reviewer header — deck name (with built-in back link) on the left,
     # position counter on the right. Replaces the floating "Decks" button.
@@ -516,7 +517,7 @@ def on_deck_browser_will_render_content(
         try:
             heatmap = build_heatmap_html(int(cfg.get("heatmap_weeks", 53)))
         except Exception as e:
-            heatmap = f"<!-- betteranki heatmap error: {e} -->"
+            heatmap = f"<!-- anki-design heatmap error: {e} -->"
     # Single-deck hero replaces the table (CSS hides the table in this mode).
     hero = ""
     try:
@@ -653,14 +654,14 @@ def _mark_sidebar_active(state: Optional[str] = None) -> None:
 
 
 def _open_settings() -> None:
-    """Open the BetterAnki settings dialog."""
+    """Open the Anki Design settings dialog."""
     try:
         from .settings import open_settings
         open_settings(mw)
     except Exception as e:
         try:
             from aqt.utils import showWarning
-            showWarning(f"BetterAnki settings: {e}")
+            showWarning(f"Anki Design settings: {e}")
         except Exception:
             pass
 
@@ -1286,7 +1287,7 @@ try:
 except Exception:
     pass
 
-# Inject a "BetterAnki" tab into Anki's native Preferences dialog so every
+# Inject an "Anki Design" tab into Anki's native Preferences dialog so every
 # entry point — including the Tools-menu "Preferences…" / app-menu shortcut
 # the user already knows — surfaces our settings alongside Anki's own.
 try:
@@ -1295,7 +1296,7 @@ try:
 except Exception:
     pass
 
-# Anki add-on dialog "Config" → open Preferences on the BetterAnki tab
+# Anki add-on dialog "Config" → open Preferences on the Anki Design tab
 # instead of dumping raw JSON in front of the user.
 try:
     mw.addonManager.setConfigAction(__name__, _open_settings)
@@ -1306,7 +1307,7 @@ except Exception:
 def _add_tools_menu_action() -> None:
     try:
         from aqt.qt import QAction, QKeySequence, QShortcut, Qt
-        act = QAction("BetterAnki Settings…", mw)
+        act = QAction("Anki Design Settings…", mw)
         # Cmd+, on macOS / Ctrl+, elsewhere — the canonical "preferences" key.
         act.setShortcut(QKeySequence("Ctrl+,"))
         # Use the enum (NOT a literal int — the values differ between Qt5/6).
@@ -1325,7 +1326,7 @@ def _add_tools_menu_action() -> None:
     except Exception as e:
         try:
             from aqt.utils import showWarning
-            showWarning(f"BetterAnki: failed to register settings shortcut: {e}")
+            showWarning(f"Anki Design: failed to register settings shortcut: {e}")
         except Exception:
             pass
 
@@ -1339,7 +1340,7 @@ try:
     _addcard.register()
 except Exception as _e:
     try:
-        print(f"[betteranki] addcard register failed: {_e}", flush=True)
+        print(f"[anki-design] addcard register failed: {_e}", flush=True)
     except Exception:
         pass
 
@@ -1714,7 +1715,7 @@ def _dev_start() -> None:
         return
     _dev_stop.clear()
     _dev_thread = threading.Thread(
-        target=_dev_watch, name="betteranki-devwatch", daemon=True
+        target=_dev_watch, name="anki-design-devwatch", daemon=True
     )
     _dev_thread.start()
 
@@ -1995,7 +1996,7 @@ def _dev_cmd_start() -> None:
     except Exception:
         pass
     t = threading.Thread(
-        target=_dev_cmd_watch, name="betteranki-dev-cmd", daemon=True
+        target=_dev_cmd_watch, name="anki-design-dev-cmd", daemon=True
     )
     t.start()
 

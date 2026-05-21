@@ -1,9 +1,9 @@
-"""BetterAnki — settings, embedded as a tab in Anki's native Preferences.
+"""Anki Design — settings, embedded as a tab in Anki's native Preferences.
 
-The whole UI lives in ``BetterAnkiSettingsPage`` (a plain ``QWidget``) so it
+The whole UI lives in ``AnkiDesignSettingsPage`` (a plain ``QWidget``) so it
 can be dropped into ``aqt.preferences.Preferences``' ``QTabWidget``. We hook
 in via ``Preferences.setupOptions`` — Anki's documented (legacy) extension
-point — so every newly-opened Preferences dialog gains a "BetterAnki" tab.
+point — so every newly-opened Preferences dialog gains an "Anki Design" tab.
 
 Every entry point that used to spawn a standalone dialog (sidebar cog, the
 Tools-menu action, Cmd+,, the add-on manager's "Config" button) now opens
@@ -58,7 +58,7 @@ def _icon_url(name: str) -> str:
 
 
 ADDON = __name__.split(".")[0]
-TAB_TITLE = "BetterAnki"
+TAB_TITLE = "Anki Design"
 PAGE_OBJECT_NAME = "baSettings"
 
 
@@ -282,7 +282,7 @@ QWidget#{PAGE_OBJECT_NAME} QLabel[role="tag"] {{
     background: transparent;
     padding: 0;
 }}
-/* Footer wordmark — small serif "BetterAnki vX.Y.Z" sitting opposite the
+/* Footer wordmark — small serif "Anki Design vX.Y.Z" sitting opposite the
    Restore link so the bottom of the page reads as a deliberate close. */
 QWidget#{PAGE_OBJECT_NAME} QLabel[role="wordmark"] {{
     color: {p['ink_faint']};
@@ -736,8 +736,8 @@ def _field_row(label_text: str, widget: QWidget,
 # --------------------------------------------------------------------------- #
 # Tab page
 # --------------------------------------------------------------------------- #
-class BetterAnkiSettingsPage(QWidget):
-    """The BetterAnki settings UI, packaged as a tab for Anki's Preferences."""
+class AnkiDesignSettingsPage(QWidget):
+    """The Anki Design settings UI, packaged as a tab for Anki's Preferences."""
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -826,7 +826,7 @@ class BetterAnkiSettingsPage(QWidget):
         v.setSpacing(6)
 
         # Header — a small "Settings" wordmark so the column has a clear
-        # start. The tab itself says "BetterAnki", so the header doesn't
+        # start. The tab itself says "Anki Design", so the header doesn't
         # need to repeat that.
         header = QLabel("Settings")
         header.setProperty("role", "page-title")
@@ -921,7 +921,7 @@ class BetterAnkiSettingsPage(QWidget):
 
         v.addWidget(feature_row(
             "sidebar_nav", "Left sidebar navigation", True,
-            "Replaces Anki's top toolbar with the BetterAnki rail.",
+            "Replaces Anki's top toolbar with the Anki Design rail.",
         ))
         v.addWidget(feature_row(
             "show_streak", "Show streak counter", True,
@@ -1155,13 +1155,13 @@ class BetterAnkiSettingsPage(QWidget):
         fi = QHBoxLayout(footer_inner)
         fi.setContentsMargins(44, 16, 44, 16)
         fi.setSpacing(16)
-        restore = QPushButton("Restore BetterAnki defaults")
+        restore = QPushButton("Restore Anki Design defaults")
         restore.setObjectName("quiet")
         restore.setCursor(Qt.CursorShape.PointingHandCursor)
         restore.clicked.connect(self._restore_defaults)
         fi.addWidget(restore, 0, Qt.AlignmentFlag.AlignLeft)
         fi.addStretch(1)
-        version = QLabel(f"BetterAnki v{_human_version()}")
+        version = QLabel(f"Anki Design v{_human_version()}")
         version.setProperty("role", "wordmark")
         fi.addWidget(version, 0, Qt.AlignmentFlag.AlignVCenter)
         done = QPushButton("Done")
@@ -1286,7 +1286,7 @@ _PATCHED = False
 
 
 def install_into_preferences() -> None:
-    """Make every newly-opened Preferences dialog gain a "BetterAnki" tab.
+    """Make every newly-opened Preferences dialog gain an "Anki Design" tab.
 
     Anki exposes ``Preferences.setupOptions`` as an explicit (legacy)
     extension point: the parent ``__init__`` calls it after ``setupUi`` has
@@ -1295,7 +1295,7 @@ def install_into_preferences() -> None:
 
     The wrap also hides Anki's native bottom chrome (the "Some settings
     will take effect…" warning + the Help/Close buttonBox) whenever the
-    BetterAnki tab is current — those controls don't apply to our settings
+    Anki Design tab is current — those controls don't apply to our settings
     and the page should own the whole dialog.
     """
     global _PATCHED
@@ -1323,7 +1323,7 @@ def install_into_preferences() -> None:
             if tw.tabText(i) == TAB_TITLE:
                 return
         try:
-            page = BetterAnkiSettingsPage(parent=tw)
+            page = AnkiDesignSettingsPage(parent=tw)
             tw.addTab(page, TAB_TITLE)
         except Exception:
             return
@@ -1364,7 +1364,7 @@ def install_into_preferences() -> None:
         pass
 
 
-def _select_betteranki_tab(dlg: Any) -> None:
+def _select_anki_design_tab(dlg: Any) -> None:
     try:
         tw = dlg.form.tabWidget
     except Exception:
@@ -1379,9 +1379,9 @@ def _select_betteranki_tab(dlg: Any) -> None:
 
 
 def open_settings(parent: Any = None) -> None:
-    """Open Anki's Preferences dialog with the BetterAnki tab selected.
+    """Open Anki's Preferences dialog with the Anki Design tab selected.
 
-    Used by every BetterAnki entry point (Cmd+, shortcut, sidebar cog,
+    Used by every Anki Design entry point (Cmd+, shortcut, sidebar cog,
     Tools menu, add-on manager Config button)."""
     install_into_preferences()
     dlg = None
@@ -1395,4 +1395,4 @@ def open_settings(parent: Any = None) -> None:
         except Exception:
             return
     if dlg is not None:
-        _select_betteranki_tab(dlg)
+        _select_anki_design_tab(dlg)

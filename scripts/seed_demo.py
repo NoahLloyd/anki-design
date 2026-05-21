@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Seed an isolated demo Anki base with ~4 years of believable review history.
 
-Built for showcasing BetterAnki's heatmap, progress bar, and reviewer chrome:
+Built for showcasing Anki Design's heatmap, progress bar, and reviewer chrome:
 the demo decks match the largest Anki user groups (med students using the
 AnKing-style workflow, language learners, geography buffs, CS students), and
 each card carries a per-day revlog history that lights up the heatmap.
@@ -9,7 +9,7 @@ each card carries a per-day revlog history that lights up the heatmap.
 Safety
 ------
 - Default target is a separate base at
-  ~/Library/Application Support/Anki2-dev/betteranki-demo
+  ~/Library/Application Support/Anki2-dev/anki-design-demo
   that is touched ONLY by this script. Your real ~/Library/Application
   Support/Anki2 collection is never opened, read, or modified.
 - The script refuses to run if the resolved target is the real Anki2 base.
@@ -18,7 +18,7 @@ Safety
 
 Usage
 -----
-    # From the betteranki worktree root:
+    # From the anki-design worktree root:
     "$HOME/Library/Application Support/AnkiProgramFiles/.venv/bin/python" \\
         scripts/seed_demo.py
 
@@ -52,7 +52,7 @@ except ImportError:  # pragma: no cover - friendly error for wrong interpreter
 
 REAL_BASE = Path.home() / "Library" / "Application Support" / "Anki2"
 DEFAULT_DEMO_BASE = (
-    Path.home() / "Library" / "Application Support" / "Anki2-dev" / "betteranki-demo"
+    Path.home() / "Library" / "Application Support" / "Anki2-dev" / "anki-design-demo"
 )
 PROFILE_NAME = "User 1"
 

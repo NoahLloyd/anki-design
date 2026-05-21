@@ -2,10 +2,10 @@ SRC := $(CURDIR)
 
 # Per-worktree addon name (override with: make <t> NAME=whatever)
 WT := $(notdir $(CURDIR))
-ifeq ($(WT),betteranki)
-NAME ?= betteranki
+ifeq ($(WT),anki-design)
+NAME ?= anki-design
 else
-NAME ?= betteranki-$(WT)
+NAME ?= anki-design-$(WT)
 endif
 
 # Each worktree gets its OWN isolated Anki base dir + addons21, so several
@@ -24,7 +24,7 @@ REAL_BASE := $(HOME)/Library/Application Support/Anki2
 .PHONY: dev undev run run-fg logs seed demo-seed demo-run demo demo-stop demo-clean deisolate clean-base build clean
 
 # Demo base — fully separate from your real Anki and from any other dev base.
-DEMO_NAME := betteranki-demo
+DEMO_NAME := anki-design-demo
 DEMO_BASE := $(HOME)/Library/Application Support/Anki2-dev/$(DEMO_NAME)
 DEMO_LINK := $(DEMO_BASE)/addons21/$(DEMO_NAME)
 
@@ -139,7 +139,7 @@ clean-base:
 	@rm -rf "$(BASE)"
 	@echo "removed base: $(BASE)"
 
-# Produce dist/betteranki.ankiaddon for AnkiWeb upload.
+# Produce dist/anki-design.ankiaddon for AnkiWeb upload.
 build:
 	@python3 build.py
 
