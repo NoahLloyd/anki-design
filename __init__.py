@@ -38,6 +38,17 @@ try:
     from aqt.toolbar import BottomToolbar as _BottomCtx
 except Exception:
     _BottomCtx = None
+# The reviewer's bottom strip ships as a separate context — `ReviewerBottomBar`,
+# NOT the generic `BottomToolbar` used elsewhere (e.g., deck-browser bottom).
+# We need both so theme + reviewer-bottom.css both apply.
+try:
+    from aqt.reviewer import ReviewerBottomBar as _ReviewerBottomCtx
+except Exception:
+    _ReviewerBottomCtx = None
+try:
+    from aqt.deckbrowser import DeckBrowserBottomBar as _DeckBrowserBottomCtx
+except Exception:
+    _DeckBrowserBottomCtx = None
 try:
     from aqt.qt import QTimer
 except Exception:
@@ -66,6 +77,8 @@ def on_webview_will_set_content(web_content: WebContent, context: Optional[Any])
         isinstance(context, (DeckBrowser, Overview, Reviewer))
         or _is(context, _ToolbarCtx)
         or _is(context, _BottomCtx)
+        or _is(context, _ReviewerBottomCtx)
+        or _is(context, _DeckBrowserBottomCtx)
     )
     if not themed:
         return
@@ -153,21 +166,28 @@ def on_webview_will_set_content(web_content: WebContent, context: Optional[Any])
             '<button class="ba-cog" onclick="pycmd(\'ba:settings\')" '
             'title="BetterAnki settings">⚙</button>' + web_content.body
         )
-    # Reviewer: no sidebar, but the user needs a way back to the deck list.
-    # A small floating "← Decks" link top-left, plus a subtle settings cog
-    # (so they can still tweak from inside a session if they really need to).
-    if isinstance(context, Reviewer):
-        web_content.css.append(f"{WEB}/sidebar.css")  # for .ba-back / .ba-cog
-        web_content.body = (
-            '<button class="ba-back" onclick="pycmd(\'ba:decks\')" '
-            'title="Back to decks (Esc)">Decks</button>'
-            + web_content.body
-        )
+    # Reviewer header — deck name (with built-in back link) on the left,
+    # position counter on the right. Replaces the floating "Decks" button.
+    # We also append the ease selector so we can drop the bottom-toolbar
+    # webview entirely. Idempotent: if the previous webview content
+    # already has our header/ease (e.g., Anki recycles the body for the
+    # answer-state render), we skip to avoid stacking duplicates.
+    if isinstance(context, Reviewer) and "ba-rv-head" not in web_content.body:
+        try:
+            head_html = _reviewer_header_html()
+        except Exception:
+            head_html = ""
+        try:
+            ease_html = _reviewer_ease_html()
+        except Exception:
+            ease_html = ""
+        web_content.body = head_html + web_content.body + ease_html
     if _is(context, _ToolbarCtx):
         web_content.css.append(f"{WEB}/toolbar.css")
     # Reviewer's bottom bar (Show Answer, Edit, More, answer buttons) lives
-    # in BottomToolbar — restyle it so it doesn't look like 2003 Anki.
-    if _is(context, _BottomCtx):
+    # in `ReviewerBottomBar` — NOT the generic BottomToolbar (that's the
+    # deck-browser/overview strip we hide). Style only the reviewer bottom.
+    if _is(context, _ReviewerBottomCtx):
         web_content.css.append(f"{WEB}/reviewer-bottom.css")
     # reviewer.css always loads on the reviewer — it owns the back button,
     # answer divider, card chrome, AND the progress strip styling. Gating it
@@ -456,8 +476,12 @@ def on_state_did_change(new_state: str, old_state: str) -> None:
         _set_bottom_visible(not hide_decks)
     elif new_state == "overview":
         _set_bottom_visible(not hide_over)
+    elif new_state == "review":
+        # We render our own ease selector inside the reviewer webview; the
+        # native bottom toolbar is just chrome we don't need.
+        _set_bottom_visible(False)
     else:
-        _set_bottom_visible(True)  # always keep reviewer answer buttons
+        _set_bottom_visible(True)
     _update_title()
     _mark_toolbar_state(new_state)
     _apply_chrome()
@@ -548,6 +572,30 @@ def _on_js_message(handled, message, context):
             mw.on_sync_button_clicked()
         elif cmd == "settings":
             _open_settings()
+        elif cmd == "undo":
+            try:
+                mw.undo()
+            except Exception:
+                return handled
+        elif cmd == "flag-cycle":
+            # Cycle the current card's flag 0 → 1 → 2 → 3 → 4 → 0.
+            try:
+                rv = getattr(mw, "reviewer", None)
+                if rv is None or getattr(rv, "card", None) is None:
+                    return handled
+                card = rv.card
+                cur = int(card.user_flag())
+                nxt = (cur + 1) % 5  # 0..4
+                card.set_user_flag(nxt)
+                # The card needs to be saved so the flag persists; the
+                # reviewer's _showQuestion will re-pull on next render.
+                try:
+                    mw.col.update_card(card)
+                except Exception:
+                    pass
+                _push_progress()
+            except Exception:
+                return handled
         elif cmd == "create":
             _open_new_deck()
         elif cmd == "import":
@@ -602,17 +650,31 @@ def _open_new_deck() -> None:
 
 
 def _start_studying(did: int) -> None:
-    """Select a deck and go straight into the reviewer (one-click study from
-    the single-deck hero)."""
+    """Select a deck and go straight into the reviewer."""
     try:
+        _dev_cmd_log(f"start_studying: did={did}")
         mw.col.decks.select(did)
         try:
             mw.col.startTimebox()
         except Exception:
             pass
-        mw.moveToState("review")
-    except Exception:
-        # If anything goes wrong, fall back to opening the overview.
+        cur_state = getattr(mw, "state", "")
+        rv = getattr(mw, "reviewer", None)
+        if cur_state == "review" and rv is not None:
+            try:
+                rv._showQuestion()
+            except Exception:
+                pass
+        else:
+            mw.moveToState("review")
+        # Log final state for debugging.
+        try:
+            after = getattr(mw, "state", "")
+            _dev_cmd_log(f"start_studying done (state now={after})")
+        except Exception:
+            _dev_cmd_log("start_studying done")
+    except Exception as e:
+        _dev_cmd_log(f"start_studying err: {e!r}")
         try:
             mw.moveToState("overview")
         except Exception:
@@ -876,6 +938,138 @@ def _remaining() -> int:
         return 0
 
 
+def _current_deck_name() -> str:
+    try:
+        did = mw.col.decks.get_current_id()
+        return mw.col.decks.name(did) or ""
+    except Exception:
+        try:
+            return mw.col.decks.current()["name"]
+        except Exception:
+            return ""
+
+
+def _reviewer_ease_html() -> str:
+    """Four interval chips that appear under the answer. Text only —
+    no numbers, no labels, no bar. They're hidden by CSS until the
+    answer is revealed. We render four slots even for shorter button
+    counts (Anki may show 2/3/4 buttons); JS hides extras."""
+    return (
+        '<div class="ba-rv-ease" aria-label="Rate this card" hidden>'
+        '<button class="ba-rv-ease-key ba-rv-ease-1" type="button"'
+        '        onclick="pycmd(\'ease1\')" data-ease="1">'
+        '<span class="ba-rv-ease-int" data-ease-slot="1"></span></button>'
+        '<button class="ba-rv-ease-key ba-rv-ease-2" type="button"'
+        '        onclick="pycmd(\'ease2\')" data-ease="2">'
+        '<span class="ba-rv-ease-int" data-ease-slot="2"></span></button>'
+        '<button class="ba-rv-ease-key ba-rv-ease-3" type="button"'
+        '        onclick="pycmd(\'ease3\')" data-ease="3">'
+        '<span class="ba-rv-ease-int" data-ease-slot="3"></span></button>'
+        '<button class="ba-rv-ease-key ba-rv-ease-4" type="button"'
+        '        onclick="pycmd(\'ease4\')" data-ease="4">'
+        '<span class="ba-rv-ease-int" data-ease-slot="4"></span></button>'
+        '</div>'
+    )
+
+
+def _current_card_type() -> str:
+    """A short label for the current card's note type (e.g., "Basic",
+    "Cloze"). Empty when no card. Trimmed to fit the header."""
+    try:
+        c = mw.reviewer.card
+        if c is None:
+            return ""
+        nt = c.note_type() or c.note().model()
+        name = (nt.get("name") or "") if isinstance(nt, dict) else getattr(nt, "name", "")
+        return str(name)
+    except Exception:
+        return ""
+
+
+def _reviewer_header_html() -> str:
+    """Header above the card: back chevron + deck name on the left, the
+    count breakdown + position on the right, and Edit + More icon buttons
+    next to them (Anki's More menu already covers flag/mark/undo)."""
+    name = html.escape(_current_deck_name() or "Studying")
+    rem = _remaining()
+    total = _session["total"] or rem or 1
+    done = max(0, total - rem)
+    pos = min(done + 1, total)
+    new_n = learn_n = rev_n = 0
+    try:
+        c = mw.col.sched.counts()
+        new_n, learn_n, rev_n = int(c[0]), int(c[1]), int(c[2])
+    except Exception:
+        pass
+    edit_svg = (
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" '
+        'xmlns="http://www.w3.org/2000/svg" aria-hidden="true">'
+        '<path d="M12 20h9"/>'
+        '<path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4Z"/></svg>'
+    )
+    more_svg = (
+        '<svg viewBox="0 0 24 24" fill="currentColor" '
+        'xmlns="http://www.w3.org/2000/svg" aria-hidden="true">'
+        '<circle cx="5" cy="12" r="1.6"/>'
+        '<circle cx="12" cy="12" r="1.6"/>'
+        '<circle cx="19" cy="12" r="1.6"/></svg>'
+    )
+    return f"""
+    <header class="ba-rv-head">
+      <div class="ba-rv-head-left">
+        <button class="ba-rv-back" type="button"
+                onclick="pycmd('ba:decks')"
+                title="Back to decks (Esc)"
+                aria-label="Back to decks">‹</button>
+        <span class="ba-rv-deck" title="{name}">{name}</span>
+      </div>
+      <div class="ba-rv-head-right">
+        <span class="ba-rv-counts">
+          <span class="ba-rv-count ba-rv-c-new"
+                title="New cards still to study"><b id="ba-rv-c-new">{new_n}</b><i>new</i></span>
+          <span class="ba-rv-count ba-rv-c-learn"
+                title="Cards in learning"><b id="ba-rv-c-learn">{learn_n}</b><i>learn</i></span>
+          <span class="ba-rv-count ba-rv-c-due"
+                title="Review cards due today"><b id="ba-rv-c-due">{rev_n}</b><i>due</i></span>
+        </span>
+        <span class="ba-rv-sep" aria-hidden="true"></span>
+        <span class="ba-rv-pos">
+          <b id="ba-rv-pos-now">{pos}</b>
+          <span>of</span>
+          <b id="ba-rv-pos-total">{total}</b>
+        </span>
+        <button class="ba-rv-icon-btn" type="button"
+                onclick="pycmd('edit')" title="Edit card (E)"
+                aria-label="Edit card">{edit_svg}</button>
+        <button class="ba-rv-icon-btn" type="button"
+                onclick="pycmd('more')" title="More options (M)"
+                aria-label="More options">{more_svg}</button>
+      </div>
+    </header>
+    """
+
+
+def _ease_intervals() -> Optional[Dict[int, str]]:
+    """Return {ease: interval_str} for the current card's next-state
+    intervals (e.g., {1: "<1m", 2: "<10m", 3: "6d", 4: "13d"}). Returns
+    None if anything goes wrong — caller hides the chips in that case."""
+    try:
+        rv = mw.reviewer
+        if rv is None or rv.card is None:
+            return None
+        labels = mw.col.sched.describe_next_states(rv._v3.states)
+        # `labels` order matches Anki's _answerButtonList: Again, [Hard,]
+        # Good, [Easy]. Map back to ease number via the button list.
+        buttons = rv._answerButtonList()
+        out: Dict[int, str] = {}
+        for (ease, _name), interval in zip(buttons, labels):
+            out[int(ease)] = str(interval)
+        return out
+    except Exception:
+        return None
+
+
 def _push_progress() -> None:
     if not _config().get("show_progress", True):
         return
@@ -885,9 +1079,31 @@ def _push_progress() -> None:
     total = _session["total"] or 1
     done = max(0, total - rem)
     pct = min(100, int(done * 100 / total))
+    pos = min(done + 1, total)
+    new_n = learn_n = rev_n = 0
+    try:
+        c = mw.col.sched.counts()
+        new_n, learn_n, rev_n = int(c[0]), int(c[1]), int(c[2])
+    except Exception:
+        pass
+    intervals = _ease_intervals() or {}
+    default_ease = 3
+    try:
+        default_ease = int(mw.reviewer._defaultEase())
+    except Exception:
+        pass
+    import json as _json
+    intervals_js = _json.dumps(intervals)
     try:
         mw.reviewer.web.eval(
             f"window.__reforgeProgress && window.__reforgeProgress({pct},{done},{rem});"
+            f"var $=function(id){{return document.getElementById(id);}};"
+            f"var n=$('ba-rv-pos-now'),t=$('ba-rv-pos-total');"
+            f"if(n)n.textContent={pos};if(t)t.textContent={total};"
+            f"var cn=$('ba-rv-c-new'),cl=$('ba-rv-c-learn'),cd=$('ba-rv-c-due');"
+            f"if(cn)cn.textContent={new_n};if(cl)cl.textContent={learn_n};"
+            f"if(cd)cd.textContent={rev_n};"
+            f"window.__baSetEase && window.__baSetEase({intervals_js}, {default_ease});"
         )
     except Exception:
         pass
@@ -989,6 +1205,16 @@ gui_hooks.main_window_did_init.append(_add_tools_menu_action)
 # install the zip, no .devmode) never start the watcher thread.
 # --------------------------------------------------------------------------- #
 ADDON_SRC = os.path.dirname(os.path.abspath(__file__))
+# Dev: a heartbeat file so we can verify the addon module imported (and at
+# what time) without scraping stdout. Truncate-on-import so each Anki start
+# produces a fresh entry.
+try:
+    _ctx = os.path.join(ADDON_SRC, ".context")
+    if os.path.isdir(_ctx):
+        with open(os.path.join(_ctx, "addon.log"), "w") as _fh:
+            _fh.write(f"imported {time.time():.0f}\n")
+except Exception:
+    pass
 
 _dev_stop = threading.Event()
 _dev_thread: Optional[threading.Thread] = None
@@ -1098,6 +1324,284 @@ def _dev_shutdown() -> None:
     _dev_stop.set()
 
 
+# Dev-only side channel: write a single line to .context/cmd to drive the UI
+# from outside the GUI process (used by the screenshot/iteration workflow).
+# Commands:
+#   review:<did>      - enter review mode for that deck id
+#   decks             - return to deck list
+#   overview:<did>    - select deck and open overview
+#   show              - flip the current card (Show Answer)
+#   ease:<1..4>       - rate the current card
+#   eval:<js>         - run JS in the reviewer webview (debug)
+_dev_cmd_seen_mtime = {"v": 0.0}
+
+
+def _dev_run_cmd(raw: str) -> None:
+    try:
+        cmd = raw.strip()
+        if not cmd:
+            return
+        state = getattr(mw, "state", "")
+        _dev_cmd_log(f"run: {cmd!r} (state={state})")
+        if cmd.startswith("review:"):
+            _start_studying(int(cmd.split(":", 1)[1]))
+        elif cmd == "decks":
+            mw.moveToState("deckBrowser")
+        elif cmd.startswith("overview:"):
+            did = int(cmd.split(":", 1)[1])
+            mw.col.decks.select(did)
+            mw.moveToState("overview")
+        elif cmd == "show":
+            # Only valid when actively reviewing a card.
+            if state != "review":
+                _dev_cmd_log("show: not in review, ignored")
+                return
+            rv = getattr(mw, "reviewer", None)
+            card = getattr(rv, "card", None) if rv else None
+            if rv and card and getattr(rv, "state", "") == "question":
+                try:
+                    rv._showAnswer()
+                except Exception as e:
+                    _dev_cmd_log(f"show err: {e!r}")
+                    if rv.web:
+                        rv.web.eval("pycmd('ans')")
+        elif cmd.startswith("ease:"):
+            if state != "review":
+                _dev_cmd_log("ease: not in review, ignored")
+                return
+            n = int(cmd.split(":", 1)[1])
+            rv = getattr(mw, "reviewer", None)
+            rv_state = getattr(rv, "state", "") if rv else ""
+            _dev_cmd_log(f"ease: rv.state={rv_state}")
+            if rv and getattr(rv, "card", None) and rv_state == "answer":
+                rv._answerCard(n)
+                _dev_cmd_log("ease: _answerCard ok")
+        elif cmd.startswith("eval:"):
+            js = cmd[5:]
+            rv = getattr(mw, "reviewer", None)
+            if rv and getattr(rv, "web", None):
+                rv.web.eval(js)
+            elif getattr(mw, "web", None):
+                mw.web.eval(js)
+        elif cmd.startswith("beval:"):
+            # Eval JS in the reviewer's bottom toolbar webview.
+            js = cmd[6:]
+            rv = getattr(mw, "reviewer", None)
+            if rv and getattr(rv, "bottom", None) and getattr(rv.bottom, "web", None):
+                rv.bottom.web.eval(js)
+        elif cmd.startswith("state_info"):
+            try:
+                st = getattr(mw, "state", "")
+                rv = getattr(mw, "reviewer", None)
+                rvs = getattr(rv, "state", "") if rv else "no-rv"
+                card = getattr(rv, "card", None) if rv else None
+                cardid = card.id if card else "no-card"
+                web = getattr(mw, "web", None)
+                _dev_cmd_log(
+                    f"state={st} rv.state={rvs} card={cardid} "
+                    f"web={web!r} bottomWeb={getattr(mw, 'bottomWeb', None)!r}"
+                )
+                if web:
+                    _dev_cmd_log(
+                        f"web visible={web.isVisible()} size={web.size().width()}x{web.size().height()}"
+                    )
+                bw = getattr(mw, "bottomWeb", None)
+                if bw:
+                    _dev_cmd_log(
+                        f"bottomWeb visible={bw.isVisible()} size={bw.size().width()}x{bw.size().height()}"
+                    )
+            except Exception as e:
+                _dev_cmd_log(f"state_info err: {e!r}")
+        elif cmd.startswith("dump_ease_main"):
+            out = os.path.join(ADDON_SRC, ".context", "ease_main.txt")
+            rv = getattr(mw, "reviewer", None)
+            if rv and getattr(rv, "web", None):
+                js = (
+                    "(function(){"
+                    "var btns=document.querySelectorAll('.ba-rv-ease-key');"
+                    "var out=[];"
+                    "btns.forEach(function(b){"
+                    "var cs=getComputedStyle(b);"
+                    "var ca=getComputedStyle(b,'::after');"
+                    "var cb=getComputedStyle(b,'::before');"
+                    "out.push({text:b.textContent.trim(),"
+                    "td:cs.textDecoration,tdl:cs.textDecorationLine,"
+                    "outline:cs.outline,bs:cs.boxShadow,bb:cs.borderBottom,"
+                    "after:{content:ca.content,bs:ca.boxShadow,bb:ca.borderBottom},"
+                    "before:{content:cb.content,bs:cb.boxShadow}"
+                    "});});"
+                    "return JSON.stringify(out);})()"
+                )
+                def _cb(r, _p=out):
+                    try: open(_p,"w").write(str(r))
+                    except Exception: pass
+                rv.web.evalWithCallback(js, _cb)
+        elif cmd.startswith("dump_ease"):
+            out = os.path.join(ADDON_SRC, ".context", "ease.txt")
+            rv = getattr(mw, "reviewer", None)
+            if rv and getattr(rv, "bottom", None) and getattr(rv.bottom, "web", None):
+                js = (
+                    "(function(){"
+                    "var btns=document.querySelectorAll('#middle button');"
+                    "var out=[];"
+                    "btns.forEach(function(b){"
+                    "var bb=b.getBoundingClientRect();"
+                    "var bcs=getComputedStyle(b,'::before');"
+                    "out.push({"
+                    "btn:{rect:[bb.x,bb.y,bb.width,bb.height]},"
+                    "before:{content:bcs.content,fs:bcs.fontSize,"
+                    "w:bcs.width,h:bcs.height,bg:bcs.backgroundColor}"
+                    "});});"
+                    "return JSON.stringify(out);})()"
+                )
+                def _cb(r, _p=out):
+                    try: open(_p,"w").write(str(r))
+                    except Exception: pass
+                rv.bottom.web.evalWithCallback(js, _cb)
+        elif cmd.startswith("dump_bottom_compute"):
+            out = os.path.join(ADDON_SRC, ".context", "bottom_compute.txt")
+            rv = getattr(mw, "reviewer", None)
+            if rv and getattr(rv, "bottom", None) and getattr(rv.bottom, "web", None):
+                js = (
+                    "(function(){"
+                    "var b=document.body,h=document.documentElement;"
+                    "var cs=function(el){return el?getComputedStyle(el):null;};"
+                    "return JSON.stringify({"
+                    "html:{theme:h.dataset.rfTheme,cls:h.className,"
+                    "rfpaper:getComputedStyle(h).getPropertyValue('--rf-paper').trim()},"
+                    "body:{bg:cs(b).backgroundColor,fg:cs(b).color}});"
+                    "})()"
+                )
+                def _cb(r, _p=out):
+                    try: open(_p,"w").write(str(r))
+                    except Exception: pass
+                rv.bottom.web.evalWithCallback(js, _cb)
+        elif cmd.startswith("dump_compute"):
+            out = os.path.join(ADDON_SRC, ".context", "compute.txt")
+            rv = getattr(mw, "reviewer", None)
+            if rv and getattr(rv, "web", None):
+                js = (
+                    "(function(){"
+                    "var b=document.body,q=document.getElementById('qa');"
+                    "var cs=function(el){return el?getComputedStyle(el):null;};"
+                    "return JSON.stringify({"
+                    "body:{fs:cs(b).fontSize,ff:cs(b).fontFamily},"
+                    "qa:{fs:cs(q).fontSize,ff:cs(q).fontFamily}"
+                    "});})()"
+                )
+                def _cb(r, _p=out):
+                    try: open(_p,"w").write(str(r))
+                    except Exception: pass
+                rv.web.evalWithCallback(js, _cb)
+        elif cmd.startswith("dump_card"):
+            out = os.path.join(ADDON_SRC, ".context", "card.html")
+            rv = getattr(mw, "reviewer", None)
+            if rv and getattr(rv, "web", None):
+                js = (
+                    "JSON.stringify({"
+                    "html: document.documentElement.outerHTML,"
+                    "card: (document.querySelector('.card')||document.body).outerHTML"
+                    "})"
+                )
+                def _cb(result, _path=out):
+                    try:
+                        with open(_path, "w") as fh:
+                            fh.write(str(result))
+                    except Exception:
+                        pass
+                rv.web.evalWithCallback(js, _cb)
+        elif cmd.startswith("dump_bottom"):
+            # Print the bottom bar's outerHTML to stdout (via a tempfile).
+            import json as _json
+            out = os.path.join(ADDON_SRC, ".context", "bottom.html")
+            rv = getattr(mw, "reviewer", None)
+            if rv and getattr(rv, "bottom", None) and getattr(rv.bottom, "web", None):
+                js = (
+                    "(function(){var x={html:document.documentElement.outerHTML,"
+                    "links:Array.from(document.querySelectorAll('link')).map(l=>l.href)};"
+                    "var b=document.querySelector('button');"
+                    "if(b){var cs=getComputedStyle(b);"
+                    "x.btn={border:cs.border,bg:cs.backgroundColor,br:cs.borderRadius,"
+                    "appearance:cs.appearance,wkApp:cs.webkitAppearance};}"
+                    "return JSON.stringify(x);})()"
+                )
+                def _cb(result, _path=out):
+                    try:
+                        with open(_path, "w") as fh:
+                            fh.write(str(result))
+                    except Exception:
+                        pass
+                rv.bottom.web.evalWithCallback(js, _cb)
+    except Exception as e:
+        try:
+            print("[ba-dev-cmd]", repr(e))
+        except Exception:
+            pass
+
+
+def _dev_cmd_log(msg: str) -> None:
+    try:
+        with open(os.path.join(ADDON_SRC, ".context", "addon.log"), "a") as fh:
+            fh.write(f"[{time.strftime('%H:%M:%S')}] {msg}\n")
+    except Exception:
+        pass
+
+
+def _dev_cmd_watch() -> None:
+    cmd_file = os.path.join(ADDON_SRC, ".context", "cmd")
+    _dev_cmd_log("dev_cmd_watch started")
+    while not _dev_stop.is_set() and _dev_active():
+        try:
+            if os.path.exists(cmd_file):
+                mtime = os.path.getmtime(cmd_file)
+                if mtime != _dev_cmd_seen_mtime["v"]:
+                    _dev_cmd_seen_mtime["v"] = mtime
+                    try:
+                        with open(cmd_file, "r") as fh:
+                            data = fh.read()
+                    except Exception as e:
+                        _dev_cmd_log(f"read err: {e!r}")
+                        data = ""
+                    for line in data.splitlines():
+                        if line.strip():
+                            _dev_cmd_log(f"cmd: {line!r}")
+                            try:
+                                mw.taskman.run_on_main(
+                                    lambda l=line: _dev_run_cmd(l)
+                                )
+                            except Exception as e:
+                                _dev_cmd_log(f"dispatch err: {e!r}")
+        except Exception as e:
+            _dev_cmd_log(f"loop err: {e!r}")
+        _dev_stop.wait(0.2)
+    _dev_cmd_log("dev_cmd_watch exited")
+
+
+_dev_cmd_started = {"v": False}
+
+
+def _dev_cmd_start() -> None:
+    if not _dev_active():
+        return
+    if _dev_cmd_started["v"]:
+        return
+    _dev_cmd_started["v"] = True
+    # Drain any stale cmd file from a prior session so we don't auto-fire
+    # a command (like `show`) against the homepage state on startup.
+    try:
+        stale = os.path.join(ADDON_SRC, ".context", "cmd")
+        if os.path.exists(stale):
+            _dev_cmd_seen_mtime["v"] = os.path.getmtime(stale)
+    except Exception:
+        pass
+    t = threading.Thread(
+        target=_dev_cmd_watch, name="betteranki-dev-cmd", daemon=True
+    )
+    t.start()
+
+
 gui_hooks.profile_did_open.append(_dev_start)
+gui_hooks.profile_did_open.append(_dev_cmd_start)
 gui_hooks.main_window_did_init.append(_dev_start)
+gui_hooks.main_window_did_init.append(_dev_cmd_start)
 gui_hooks.profile_will_close.append(_dev_shutdown)
