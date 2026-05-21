@@ -22,6 +22,7 @@ from typing import Any, Dict, Optional
 
 from aqt import gui_hooks, mw
 from aqt.deckbrowser import DeckBrowser, DeckBrowserContent
+from aqt.editor import Editor, EditorMode
 from aqt.overview import Overview
 from aqt.reviewer import Reviewer
 from aqt.webview import WebContent
@@ -132,10 +133,12 @@ def _is(context: Any, cls: Any) -> bool:
 # Theme + asset injection
 # --------------------------------------------------------------------------- #
 def on_webview_will_set_content(web_content: WebContent, context: Optional[Any]) -> None:
+    is_editor = isinstance(context, Editor)
     themed = (
         isinstance(context, (DeckBrowser, Overview, Reviewer))
         or _is(context, _ToolbarCtx)
         or _is(context, _BottomCtx)
+        or is_editor
     )
     if not themed:
         return
@@ -272,6 +275,21 @@ def on_webview_will_set_content(web_content: WebContent, context: Optional[Any])
         web_content.css.append(f"{WEB}/reviewer.css")
         if cfg.get("show_progress", True):
             web_content.js.append(f"{WEB}/reviewer.js")
+    if is_editor:
+        # Only style the editor in ADD_CARDS mode — the same Editor is used
+        # by Browser and Edit-Current; we don't want to overwrite their
+        # chrome here. Anki's CSP blocks inline <script> in the editor page,
+        # so the mode AND theme are communicated via a meta tag in the head
+        # that addcard.js reads (avoiding inline-script CSP).
+        em = getattr(context, "editorMode", None)
+        if em == EditorMode.ADD_CARDS:
+            theme_safe = theme_pref if theme_pref in ("light", "dark") else ""
+            web_content.head += (
+                f'<meta name="ba-editor-mode" content="add">'
+                f'<meta name="ba-theme" content="{theme_safe}">'
+            )
+            web_content.css.append(f"{WEB}/addcard.css")
+            web_content.js.append(f"{WEB}/addcard.js")
 
 
 # --------------------------------------------------------------------------- #
@@ -631,9 +649,23 @@ def _on_js_message(handled, message, context):
     cmd = message[3:]
     try:
         if cmd == "decks":
+            # If we're in the embedded Add view, close it first so the deck
+            # browser becomes visible again.
+            try:
+                from . import addcard_embed
+                addcard_embed.close_inline()
+            except Exception:
+                pass
             mw.moveToState("deckBrowser")
         elif cmd == "add":
-            mw.onAddCard()
+            # Open AddCards inside the main window (over the deck area, to
+            # the right of the sidebar). Falls back to the standard window
+            # if the embed setup fails.
+            try:
+                from . import addcard_embed
+                addcard_embed.open_inline(mw)
+            except Exception:
+                mw.onAddCard()
         elif cmd == "browse":
             mw.onBrowse()
         elif cmd == "stats":
@@ -1085,6 +1117,17 @@ def _add_tools_menu_action() -> None:
 gui_hooks.main_window_did_init.append(_add_tools_menu_action)
 
 
+# Add Card window redesign — separate module so the file stays focused.
+try:
+    from . import addcard as _addcard
+    _addcard.register()
+except Exception as _e:
+    try:
+        print(f"[betteranki] addcard register failed: {_e}", flush=True)
+    except Exception:
+        pass
+
+
 # --------------------------------------------------------------------------- #
 # Dev hot-reload — web/ assets only, enabled by `make dev` (a .devmode file).
 #
@@ -1161,6 +1204,225 @@ def _dev_reload_views() -> None:
         pass
 
 
+def _dev_screenshot(request_path: str) -> None:
+    """Runs on the Qt main thread. Reads the JSON request file, finds the
+    target Qt widget (by window-title substring or "main"), grabs it as a
+    PNG and writes to the requested output path. Always removes the request
+    file. Used by the iterative-design screenshot loop."""
+    import json
+    try:
+        with open(request_path) as fh:
+            req = json.load(fh)
+    except Exception:
+        try:
+            os.remove(request_path)
+        except Exception:
+            pass
+        return
+    try:
+        os.remove(request_path)
+    except Exception:
+        pass
+    out = req.get("out")
+    target_title = (req.get("title") or "").lower()
+    open_addcards = bool(req.get("open_addcards"))
+    if not out:
+        return
+    try:
+        from aqt.qt import QApplication, QTimer
+        embed_add = bool(req.get("embed_add"))
+        if open_addcards:
+            try:
+                if embed_add:
+                    from . import addcard_embed
+                    addcard_embed.open_inline(mw)
+                else:
+                    mw.onAddCard()
+            except Exception:
+                pass
+        # Optional: pre-fill the fields with sample text so we can validate
+        # how the design looks with content (vs the empty/placeholder state).
+        fill_sample = bool(req.get("fill_sample"))
+        try:
+            QApplication.processEvents()
+        except Exception:
+            pass
+
+        def _grab() -> None:
+            widget = None
+            if target_title in ("main", "mw"):
+                widget = mw
+            else:
+                for w in QApplication.topLevelWidgets():
+                    try:
+                        if not w.isVisible():
+                            continue
+                        title = (w.windowTitle() or "").lower()
+                        if target_title and target_title in title:
+                            widget = w
+                            break
+                    except Exception:
+                        continue
+            if widget is None:
+                try:
+                    with open(out + ".err", "w") as fh:
+                        fh.write(f"no widget for title={target_title!r}\n")
+                except Exception:
+                    pass
+                return
+            try:
+                widget.raise_()
+                widget.activateWindow()
+                QApplication.processEvents()
+            except Exception:
+                pass
+            try:
+                pix = widget.grab()
+                pix.save(out, "PNG")
+            except Exception as e:
+                try:
+                    with open(out + ".err", "w") as fh:
+                        fh.write(f"grab failed: {e}\n")
+                except Exception:
+                    pass
+
+        # Optionally inject sample text into editor fields so we can preview
+        # the design with content. We schedule this *before* the grab delay.
+        def _fill() -> None:
+            try:
+                from aqt import dialogs
+                ac = dialogs._dialogs.get("AddCards", [None, None])[1]
+                if ac is None or not getattr(ac, "editor", None):
+                    return
+                ed = ac.editor
+                if not getattr(ed, "note", None):
+                    return
+                samples = [
+                    "What is the capital of France?",
+                    "Paris — capital and most populous city.",
+                    "Located on the Seine river.",
+                ]
+                for i in range(min(len(ed.note.fields), len(samples))):
+                    ed.note.fields[i] = samples[i]
+                ed.loadNote()
+            except Exception:
+                pass
+        if fill_sample:
+            QTimer.singleShot(400, _fill)
+        # Optionally click the toolbar cog to verify the dropdown renders.
+        click_cog = bool(req.get("click_cog"))
+        def _click_cog() -> None:
+            try:
+                from aqt import dialogs
+                ac = dialogs._dialogs.get("AddCards", [None, None])[1]
+                if ac is None:
+                    return
+                web = ac.editor.web
+                web.eval(
+                    "(function(){var b=document.querySelector('#settings button');"
+                    "if(b)b.click();})();"
+                )
+            except Exception:
+                pass
+        if click_cog:
+            QTimer.singleShot(700, _click_cog)
+        # Optionally trigger the in-page note-type picker so the dropdown is
+        # visible in the screenshot.
+        click_type = bool(req.get("click_type"))
+        def _click_type() -> None:
+            try:
+                from aqt import dialogs
+                from PyQt6.QtWidgets import QPushButton as _QPB
+                ac = dialogs._dialogs.get("AddCards", [None, None])[1]
+                if ac is None:
+                    return
+                btns = ac.form.modelArea.findChildren(_QPB)
+                if btns:
+                    btns[0].click()
+            except Exception:
+                pass
+        if click_type:
+            QTimer.singleShot(800, _click_type)
+
+        # Give the WebEngine view time to render (templates load async).
+        # 1500ms is conservative; the editor.html bundle plus Svelte hydration
+        # can take a beat after window construction.
+        delay_ms = int(req.get("delay_ms", 1500))
+        QTimer.singleShot(delay_ms, _grab)
+    except Exception as e:
+        try:
+            with open(out + ".err", "w") as fh:
+                fh.write(f"screenshot fatal: {e}\n")
+        except Exception:
+            pass
+
+
+_SCREENSHOT_DIR = os.path.join(ADDON_SRC, ".context", "screenshot-requests")
+_DUMP_DIR = os.path.join(ADDON_SRC, ".context", "dump-requests")
+
+
+def _dev_dump(request_path: str) -> None:
+    """Runs on the Qt main thread. Reads a {out, title} JSON request and
+    dumps that window's web HTML to `out`. Used for design inspection."""
+    import json
+    try:
+        with open(request_path) as fh:
+            req = json.load(fh)
+    except Exception:
+        try:
+            os.remove(request_path)
+        except Exception:
+            pass
+        return
+    try:
+        os.remove(request_path)
+    except Exception:
+        pass
+    out = req.get("out")
+    target_title = (req.get("title") or "").lower()
+    if not out:
+        return
+    try:
+        from aqt.qt import QApplication
+        widget = None
+        for w in QApplication.topLevelWidgets():
+            try:
+                if not w.isVisible():
+                    continue
+                title = (w.windowTitle() or "").lower()
+                if target_title and target_title in title:
+                    widget = w
+                    break
+            except Exception:
+                continue
+        if widget is None:
+            with open(out, "w") as fh:
+                fh.write(f"<!-- no widget for title={target_title!r} -->")
+            return
+        try:
+            from aqt.qt import QWebEngineView  # type: ignore
+        except Exception:
+            from PyQt6.QtWebEngineWidgets import QWebEngineView  # type: ignore
+        web = widget.findChild(QWebEngineView)
+        if web is None:
+            with open(out, "w") as fh:
+                fh.write("<!-- no QWebEngineView found -->")
+            return
+        def _write(html: str, out: str = out) -> None:
+            try:
+                with open(out, "w") as fh:
+                    fh.write(html or "")
+            except Exception:
+                pass
+        web.page().toHtml(_write)
+    except Exception as e:
+        try:
+            with open(out, "w") as fh:
+                fh.write(f"<!-- dump error: {e} -->")
+        except Exception:
+            pass
+
+
 def _dev_watch() -> None:
     web_dir = os.path.join(ADDON_SRC, "web")
     seen: Dict[str, float] = {}
@@ -1186,6 +1448,34 @@ def _dev_watch() -> None:
                 mw.taskman.run_on_main(_dev_reload_views)
             except Exception:
                 pass
+        # Process pending screenshot requests (one per file in the dir).
+        try:
+            if os.path.isdir(_SCREENSHOT_DIR):
+                for name in sorted(os.listdir(_SCREENSHOT_DIR)):
+                    if not name.endswith(".json"):
+                        continue
+                    req = os.path.join(_SCREENSHOT_DIR, name)
+                    try:
+                        mw.taskman.run_on_main(
+                            lambda p=req: _dev_screenshot(p)
+                        )
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        # Process pending DOM-dump requests.
+        try:
+            if os.path.isdir(_DUMP_DIR):
+                for name in sorted(os.listdir(_DUMP_DIR)):
+                    if not name.endswith(".json"):
+                        continue
+                    req = os.path.join(_DUMP_DIR, name)
+                    try:
+                        mw.taskman.run_on_main(lambda p=req: _dev_dump(p))
+                    except Exception:
+                        pass
+        except Exception:
+            pass
         _dev_stop.wait(0.5)
 
 
