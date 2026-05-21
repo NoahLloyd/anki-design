@@ -11,6 +11,29 @@
 
 /* ============================ THEME TOKENS ============================ */
 /* dark = default */
+/* Page-level density scales — driven by data-rf-density on <html>. The
+   values are picked up by the .ba-home spacing block further down, and
+   by the row-padding on deck rows. Default is "comfortable". */
+:root[data-rf-density="compact"] {
+  --rf-pad-page: 26px;
+  --rf-pad-page-bottom: 20px;
+  --rf-pad-row: 12px;
+  --rf-gap-section: 26px;
+}
+:root[data-rf-density="cozy"] {
+  --rf-pad-page: 32px;
+  --rf-pad-page-bottom: 26px;
+  --rf-pad-row: 16px;
+  --rf-gap-section: 32px;
+}
+:root[data-rf-density="comfortable"],
+:root:not([data-rf-density]) {
+  --rf-pad-page: 40px;
+  --rf-pad-page-bottom: 32px;
+  --rf-pad-row: 20px;
+  --rf-gap-section: 40px;
+}
+
 :root {
   --rf-paper: #0b0c0f;
   --rf-panel: #121319;
@@ -107,19 +130,26 @@
   --rf-bg: #060708;
 }
 
-/* heatmap cells get a light-mode scale (the dark scale is in heatmap.css) */
+/* Heatmap palette — set as CSS variables so the user's "heatmap_palette"
+   setting in BetterAnki preferences can override these via a higher-
+   specificity injection. heatmap.css consumes the vars; we just provide
+   defaults appropriate to the active theme. */
 @media (prefers-color-scheme: light) {
-  :root:not([data-rf-theme="dark"]) .rf-hm-l0 { background: rgba(31,29,24,.07); }
-  :root:not([data-rf-theme="dark"]) .rf-hm-l1 { background: #cfe0f5; }
-  :root:not([data-rf-theme="dark"]) .rf-hm-l2 { background: #8eb1de; }
-  :root:not([data-rf-theme="dark"]) .rf-hm-l3 { background: #4d7fc4; }
-  :root:not([data-rf-theme="dark"]) .rf-hm-l4 { background: #1f5cae; }
+  :root:not([data-rf-theme="dark"]) {
+    --rf-hm-l0: rgba(31,29,24,.07);
+    --rf-hm-l1: #cfe0f5;
+    --rf-hm-l2: #8eb1de;
+    --rf-hm-l3: #4d7fc4;
+    --rf-hm-l4: #1f5cae;
+  }
 }
-:root[data-rf-theme="light"] .rf-hm-l0 { background: rgba(31,29,24,.07); }
-:root[data-rf-theme="light"] .rf-hm-l1 { background: #cfe0f5; }
-:root[data-rf-theme="light"] .rf-hm-l2 { background: #8eb1de; }
-:root[data-rf-theme="light"] .rf-hm-l3 { background: #4d7fc4; }
-:root[data-rf-theme="light"] .rf-hm-l4 { background: #1f5cae; }
+:root[data-rf-theme="light"] {
+  --rf-hm-l0: rgba(31,29,24,.07);
+  --rf-hm-l1: #cfe0f5;
+  --rf-hm-l2: #8eb1de;
+  --rf-hm-l3: #4d7fc4;
+  --rf-hm-l4: #1f5cae;
+}
 
 /* ============================== BASE ============================== */
 html, body {
@@ -163,7 +193,9 @@ body::before {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 40px 40px 32px;
+  padding: var(--rf-pad-page, 40px)
+           var(--rf-pad-page, 40px)
+           var(--rf-pad-page-bottom, 32px);
   min-height: 100vh;
   box-sizing: border-box;
 }
@@ -253,12 +285,12 @@ body::before {
   border: 0 !important;
   border-bottom: 1px solid var(--rf-line) !important;
   border-radius: 0 !important;
-  padding: 16px 10px !important;
+  padding: var(--rf-pad-row, 16px) 10px !important;
   vertical-align: middle;
   transition: background 120ms ease;
 }
 .ba-home tr.deck td.decktd { padding-left: 4px !important; }
-.ba-home tr.deck td[align="end"] { padding: 16px 6px !important; }
+.ba-home tr.deck td[align="end"] { padding: var(--rf-pad-row, 16px) 6px !important; }
 .ba-home tr.deck:hover:not(.top-level-drag-row) td {
   background: var(--rf-row-hover) !important;
   border-radius: 0 !important;
