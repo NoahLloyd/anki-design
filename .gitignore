@@ -4,3 +4,4 @@ meta.json
 dist/
 .DS_Store
 .devmode
+.context/
