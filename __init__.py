@@ -724,7 +724,23 @@ def _mark_sidebar_active(state: Optional[str] = None) -> None:
 
 
 def _open_settings() -> None:
-    """Open the Anki Design settings dialog."""
+    """Open the Anki Design settings — embedded inline if possible,
+    standalone Preferences dialog otherwise."""
+    # Tear down any other embed that might be up; only one inline view
+    # at a time.
+    for mod in ("addcard_embed", "browse_embed", "stats_embed"):
+        try:
+            from importlib import import_module
+            import_module("." + mod, __name__).close_inline()
+        except Exception:
+            pass
+    try:
+        from . import settings_embed
+        settings_embed.open_inline(mw)
+        return
+    except Exception:
+        pass
+    # Fallback: standalone Preferences dialog with Anki Design tab.
     try:
         from .settings import open_settings
         open_settings(mw)
@@ -769,34 +785,69 @@ def _on_js_message(handled, message, context):
                 pass
             return (True, None)
         if cmd == "decks":
-            # If we're in the embedded Add view, close it first so the deck
-            # browser becomes visible again. The Add embed is an overlay
-            # painted *on top of* the deck browser — mw.state stays
-            # "deckBrowser" the whole time it's open. Calling moveToState
-            # while already in deckBrowser state triggers a full re-render
-            # of the deck list HTML (deckBrowser.show()), which reads as a
-            # disorienting flash when switching tabs. Only move state when
-            # we're actually somewhere else (reviewer, overview, etc.).
-            try:
-                from . import addcard_embed
-                addcard_embed.close_inline()
-            except Exception:
-                pass
+            # If we're in any embedded view (Add, Browse, Stats,
+            # Settings), close it first so the deck browser becomes
+            # visible again. The embeds are overlays painted *on top
+            # of* the deck browser — mw.state stays "deckBrowser" the
+            # whole time. Calling moveToState while already in
+            # deckBrowser state triggers a full re-render of the deck
+            # list HTML (deckBrowser.show()), which reads as a
+            # disorienting flash when switching tabs. Only move state
+            # when we're actually somewhere else (reviewer, overview,
+            # etc.).
+            for mod in (
+                "addcard_embed", "browse_embed", "stats_embed", "settings_embed",
+            ):
+                try:
+                    from importlib import import_module
+                    import_module("." + mod, __name__).close_inline()
+                except Exception:
+                    pass
             if getattr(mw, "state", None) != "deckBrowser":
                 mw.moveToState("deckBrowser")
         elif cmd == "add":
             # Open AddCards inside the main window (over the deck area, to
             # the right of the sidebar). Falls back to the standard window
-            # if the embed setup fails.
+            # if the embed setup fails. Tear other embeds down first.
+            for mod in ("browse_embed", "stats_embed", "settings_embed"):
+                try:
+                    from importlib import import_module
+                    import_module("." + mod, __name__).close_inline()
+                except Exception:
+                    pass
             try:
                 from . import addcard_embed
                 addcard_embed.open_inline(mw)
             except Exception:
                 mw.onAddCard()
         elif cmd == "browse":
-            mw.onBrowse()
+            # Open the Browser embedded in the main window, mirroring the
+            # Add embed. Tear other embeds down first.
+            for mod in ("addcard_embed", "stats_embed", "settings_embed"):
+                try:
+                    from importlib import import_module
+                    import_module("." + mod, __name__).close_inline()
+                except Exception:
+                    pass
+            try:
+                from . import browse_embed
+                browse_embed.open_inline(mw)
+            except Exception:
+                mw.onBrowse()
         elif cmd == "stats":
-            mw.onStats()
+            # Open Stats embedded in the main window. Tear other embeds
+            # down first.
+            for mod in ("addcard_embed", "browse_embed", "settings_embed"):
+                try:
+                    from importlib import import_module
+                    import_module("." + mod, __name__).close_inline()
+                except Exception:
+                    pass
+            try:
+                from . import stats_embed
+                stats_embed.open_inline(mw)
+            except Exception:
+                mw.onStats()
         elif cmd == "sync":
             mw.on_sync_button_clicked()
         elif cmd == "settings":
@@ -846,8 +897,9 @@ def _on_js_message(handled, message, context):
             else:
                 return handled
         elif cmd == "prefs":
+            # Same destination as ba:settings — route through the embed.
             try:
-                mw.onPrefs()
+                _open_settings()
             except Exception:
                 return handled
         elif cmd.startswith("deck:"):
@@ -1757,17 +1809,132 @@ def _setup_sidebar_shortcuts() -> None:
     except Exception:
         pass
 
+    # Same dance for Browse (B key + mw.onBrowse).
+    try:
+        _orig_on_browse = mw.onBrowse
+
+        def _patched_on_browse(*args, **kwargs):
+            try:
+                from . import browse_embed
+                browse_embed.open_inline(mw)
+            except Exception:
+                _orig_on_browse(*args, **kwargs)
+
+        mw.onBrowse = _patched_on_browse  # type: ignore[assignment]
+    except Exception:
+        pass
+
+    try:
+        from aqt.qt import QShortcut, QKeySequence
+        target_seq_b = QKeySequence("b")
+
+        def _open_inline_b() -> None:
+            try:
+                from . import browse_embed
+                browse_embed.open_inline(mw)
+            except Exception:
+                try:
+                    from aqt import dialogs
+                    dialogs.open("Browser", mw)
+                except Exception:
+                    pass
+
+        for sc in mw.findChildren(QShortcut):
+            try:
+                if sc.key().toString() == target_seq_b.toString():
+                    try:
+                        sc.activated.disconnect()
+                    except Exception:
+                        pass
+                    sc.activated.connect(_open_inline_b)
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    # Same dance for Stats (T key + mw.onStats). Shift+T (legacy
+    # DeckStats) is left alone — it falls through to the standalone
+    # window; only the modern NewDeckStats gets embedded.
+    try:
+        _orig_on_stats = mw.onStats
+
+        def _patched_on_stats(*args, **kwargs):
+            try:
+                from aqt.utils import KeyboardModifiersPressed
+                want_old = KeyboardModifiersPressed().shift
+                if want_old:
+                    _orig_on_stats(*args, **kwargs)
+                    return
+            except Exception:
+                pass
+            try:
+                from . import stats_embed
+                stats_embed.open_inline(mw)
+            except Exception:
+                _orig_on_stats(*args, **kwargs)
+
+        mw.onStats = _patched_on_stats  # type: ignore[assignment]
+    except Exception:
+        pass
+
+    try:
+        from aqt.qt import QShortcut, QKeySequence
+        target_seq_t = QKeySequence("t")
+
+        def _open_inline_t() -> None:
+            try:
+                from . import stats_embed
+                stats_embed.open_inline(mw)
+            except Exception:
+                try:
+                    from aqt import dialogs
+                    dialogs.open("NewDeckStats", mw)
+                except Exception:
+                    pass
+
+        for sc in mw.findChildren(QShortcut):
+            try:
+                if sc.key().toString() == target_seq_t.toString():
+                    try:
+                        sc.activated.disconnect()
+                    except Exception:
+                        pass
+                    sc.activated.connect(_open_inline_t)
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    # Same dance for Preferences: patch mw.onPrefs so the Tools menu
+    # entry (and any code path that goes through mw.onPrefs()) opens
+    # the inline embed instead of the standalone window.
+    try:
+        _orig_on_prefs = mw.onPrefs
+
+        def _patched_on_prefs(*args, **kwargs):
+            try:
+                _open_settings()
+            except Exception:
+                _orig_on_prefs(*args, **kwargs)
+
+        mw.onPrefs = _patched_on_prefs  # type: ignore[assignment]
+    except Exception:
+        pass
+
     # Patch moveToState so leaving the deck-area context (e.g., D from
-    # inside the inline-Add embed) closes the embed before the navigation.
+    # inside an inline embed) closes the embed before the navigation.
     try:
         _orig_move_to_state = mw.moveToState
 
         def _patched_move_to_state(state, *args, **kwargs):
-            try:
-                from . import addcard_embed
-                addcard_embed.close_inline()
-            except Exception:
-                pass
+            for mod in (
+                "addcard_embed", "browse_embed", "stats_embed", "settings_embed",
+            ):
+                try:
+                    from importlib import import_module
+                    import_module("." + mod, __name__).close_inline()
+                except Exception:
+                    pass
             return _orig_move_to_state(state, *args, **kwargs)
 
         mw.moveToState = _patched_move_to_state  # type: ignore[assignment]
