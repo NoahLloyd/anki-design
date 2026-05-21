@@ -308,11 +308,42 @@ def on_webview_will_set_content(web_content: WebContent, context: Optional[Any])
         # by Browser and Edit-Current; we don't want to overwrite their
         # chrome here. Anki's CSP blocks inline <script> in the editor page,
         # so the mode AND theme are communicated via a meta tag in the head
-        # that addcard.js reads (avoiding inline-script CSP).
+        # that addcard.js reads (avoiding inline-script CSP). Inline <style>
+        # IS allowed and runs synchronously before first paint, so we use it
+        # to suppress the open-time FOUC: the body starts at opacity 0 on a
+        # paper-colored canvas, then addcard.js fades it back in once the
+        # toolbar/field/tags settle. Without this, the user sees Anki's
+        # default editor briefly, then ours, then JS reshuffling tags and
+        # the gear into place — reads as a stack of flashes.
         em = getattr(context, "editorMode", None)
         if em == EditorMode.ADD_CARDS:
             theme_safe = theme_pref if theme_pref in ("light", "dark") else ""
+            # Resolve the actual paper color once, in Python — even when
+            # theme_pref is "system" — so the inline <style> can emit a
+            # single concrete bg color. If we instead used a CSS media
+            # query keyed to prefers-color-scheme, the bg would flip
+            # mid-load on system=dark + addon=light (because data-rf-theme
+            # isn't set until addcard.js runs), which itself reads as a
+            # flash. One concrete color = no flip.
+            try:
+                from . import addcard as _addcard
+                _pal, _ = _addcard._resolve_palette()
+                paper_color = _pal["paper"]
+            except Exception:
+                paper_color = "#f6f3ec"
             web_content.head += (
+                "<style>"
+                # !important: Anki's editor.css loads after our inline
+                # style and sets `body { background-color: var(--bs-body-bg) }`
+                # which resolves to a near-white in light mode (the default
+                # Bootstrap palette). Without !important Anki wins on source
+                # order and the page flashes white before our addcard.css
+                # eventually overrides body bg. !important here makes the
+                # paper bg stick from first paint.
+                f"html,body{{background:{paper_color}!important}}"
+                "body{opacity:0;transition:opacity 220ms ease}"
+                "html[data-ba-ready] body{opacity:1}"
+                "</style>"
                 f'<meta name="ba-editor-mode" content="add">'
                 f'<meta name="ba-theme" content="{theme_safe}">'
             )
@@ -726,15 +757,33 @@ def _on_js_message(handled, message, context):
         return handled
     cmd = message[3:]
     try:
+        if cmd == "embed-ready":
+            # addcard.js fires this from reveal() once the editor body is
+            # ready to fade in. We drop the anti-flash curtain that
+            # open_inline put up, so the user transitions straight from
+            # paper to faded-in editor with no intermediate state.
+            try:
+                from . import addcard_embed
+                addcard_embed.drop_curtain()
+            except Exception:
+                pass
+            return (True, None)
         if cmd == "decks":
             # If we're in the embedded Add view, close it first so the deck
-            # browser becomes visible again.
+            # browser becomes visible again. The Add embed is an overlay
+            # painted *on top of* the deck browser — mw.state stays
+            # "deckBrowser" the whole time it's open. Calling moveToState
+            # while already in deckBrowser state triggers a full re-render
+            # of the deck list HTML (deckBrowser.show()), which reads as a
+            # disorienting flash when switching tabs. Only move state when
+            # we're actually somewhere else (reviewer, overview, etc.).
             try:
                 from . import addcard_embed
                 addcard_embed.close_inline()
             except Exception:
                 pass
-            mw.moveToState("deckBrowser")
+            if getattr(mw, "state", None) != "deckBrowser":
+                mw.moveToState("deckBrowser")
         elif cmd == "add":
             # Open AddCards inside the main window (over the deck area, to
             # the right of the sidebar). Falls back to the standard window

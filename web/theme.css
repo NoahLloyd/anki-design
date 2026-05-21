@@ -539,77 +539,18 @@ body::before {
   text-align: left;
   cursor: pointer;
   overflow: hidden;
-  transition: border-color 240ms ease, transform 160ms ease,
-              box-shadow 280ms ease;
+  transition: background 180ms ease, border-color 180ms ease;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
-/* Hover — accent border + a soft top-anchored glow + a feather-light
-   elevation. Earlier versions used a heavy 22% accent drop shadow that
-   read as a dark blue blot on light paper; this version stays subtle
-   in both themes (theme-specific tweaks live below). */
-.ba-hero::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: radial-gradient(120% 80% at 50% 0%,
-              color-mix(in srgb, var(--rf-accent, #6c8cff) 9%, transparent),
-              transparent 70%);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 260ms ease;
-}
-.ba-hero:hover::before,
-.ba-hero.is-hover::before { opacity: 1; }
+/* Hover — a single calm background tint composed onto the panel.
+   Earlier versions stacked an accent border, ring shadow, drop glow,
+   gradient overlay, and translateY lift; together those read as a
+   heavy dark blot on warm paper. */
 .ba-hero:hover,
 .ba-hero.is-hover {
-  border-color: var(--rf-accent, #6c8cff);
-  transform: translateY(-1px);
-  box-shadow:
-    0 0 0 2px color-mix(in srgb, var(--rf-accent, #6c8cff) 14%, transparent),
-    0 10px 22px color-mix(in srgb, var(--rf-accent, #6c8cff) 10%, transparent);
+  background: color-mix(in srgb, var(--rf-ink) 4%, var(--rf-panel));
 }
-/* Light mode shadows read heavier on warm paper — dial them back further. */
-@media (prefers-color-scheme: light) {
-  :root:not([data-rf-theme="dark"]) .ba-hero:hover,
-  :root:not([data-rf-theme="dark"]) .ba-hero.is-hover {
-    box-shadow:
-      0 0 0 2px color-mix(in srgb, var(--rf-accent, #6c8cff) 16%, transparent),
-      0 6px 16px color-mix(in srgb, var(--rf-accent, #6c8cff) 7%, transparent);
-  }
-  :root:not([data-rf-theme="dark"]) .ba-hero::before {
-    background: radial-gradient(120% 80% at 50% 0%,
-                color-mix(in srgb, var(--rf-accent, #6c8cff) 7%, transparent),
-                transparent 70%);
-  }
-}
-:root[data-rf-theme="light"] .ba-hero:hover,
-:root[data-rf-theme="light"] .ba-hero.is-hover {
-  box-shadow:
-    0 0 0 2px color-mix(in srgb, var(--rf-accent, #6c8cff) 16%, transparent),
-    0 6px 16px color-mix(in srgb, var(--rf-accent, #6c8cff) 7%, transparent);
-}
-:root[data-rf-theme="light"] .ba-hero::before {
-  background: radial-gradient(120% 80% at 50% 0%,
-              color-mix(in srgb, var(--rf-accent, #6c8cff) 7%, transparent),
-              transparent 70%);
-}
-/* Dark mode benefits from a slightly stronger sweep — the dark panel
-   would otherwise absorb the gradient. */
-:root[data-rf-theme="dark"] .ba-hero::before {
-  background: radial-gradient(120% 80% at 50% 0%,
-              color-mix(in srgb, var(--rf-accent, #6c8cff) 12%, transparent),
-              transparent 70%);
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-rf-theme="light"]) .ba-hero::before {
-    background: radial-gradient(120% 80% at 50% 0%,
-                color-mix(in srgb, var(--rf-accent, #6c8cff) 12%, transparent),
-                transparent 70%);
-  }
-}
-.ba-hero:active { transform: translateY(0); }
 .ba-hero:focus-visible {
   outline: 2px solid var(--rf-accent, #6c8cff);
   outline-offset: 4px;
@@ -618,15 +559,10 @@ body::before {
   cursor: default;
   border-color: var(--rf-line);
 }
-.ba-hero.ba-hero--done::before { display: none; }
 .ba-hero.ba-hero--done:hover {
-  border-color: var(--rf-line);
-  transform: none;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  background: var(--rf-panel);
 }
 
-/* Hover Study pill removed — the card's accent border + glow already
-   signal interactivity, and the user didn't want an inline cue. */
 .ba-hero.ba-hero--done .ba-hero-go { display: none; }
 .ba-hero-arrow {
   font-family: var(--rf-sans);
@@ -641,7 +577,6 @@ body::before {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 18px;
   align-items: end;
-  position: relative; /* sit above the ::before gradient */
 }
 .ba-hero-stat {
   display: flex;
