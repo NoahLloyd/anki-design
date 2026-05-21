@@ -1,6 +1,12 @@
 {
+  "theme": "system",
   "accent": "#6c8cff",
+  "sidebar_nav": true,
   "show_heatmap": true,
   "show_progress": true,
-  "heatmap_weeks": 53
+  "hide_bottom_on_decks": true,
+  "hide_bottom_on_overview": true,
+  "heatmap_weeks": 53,
+  "font_serif": "",
+  "font_sans": ""
 }

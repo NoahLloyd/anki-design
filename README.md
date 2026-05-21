@@ -21,9 +21,10 @@ No network calls, no bundled binaries — keeps AnkiWeb review trivial.
 
 | Path | Purpose |
 |---|---|
-| `__init__.py` | hooks, heatmap generation, progress logic, config |
-| `web/theme.css` | the redesign — the main file to iterate on |
-| `web/heatmap.css` | heatmap styling |
+| `__init__.py` | hooks, masthead + heatmap generation, progress, config |
+| `web/theme.css` | the deck-homepage "study ledger" redesign |
+| `web/heatmap.css` / `.js` | heatmap styling; scroll-to-newest + tooltip |
+| `web/toolbar.css` | top toolbar redesign (flat full-width header) |
 | `web/reviewer.css` / `.js` | progress bar |
 | `config.json` / `config.md` | user-facing settings + their help text |
 | `manifest.json` | name, version, `conflicts` with rival add-ons |

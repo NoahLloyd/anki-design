@@ -14,6 +14,7 @@ web/*.js hot-reload live; Python changes still need an Anki restart.
 """
 
 import datetime
+import html
 import os
 import threading
 import time
@@ -26,12 +27,15 @@ from aqt.reviewer import Reviewer
 from aqt.webview import WebContent
 
 # Optional bits — guarded so a renamed API can never break the whole add-on.
+# NB: the webview's `context` for the bars is the *wrapper* passed to
+# stdHtml() — TopToolbar / BottomToolbar — NOT Toolbar / BottomBar. Matching
+# the wrong class is why the toolbar was never themed.
 try:
-    from aqt.toolbar import Toolbar as _ToolbarCtx
+    from aqt.toolbar import TopToolbar as _ToolbarCtx
 except Exception:
     _ToolbarCtx = None
 try:
-    from aqt.toolbar import BottomBar as _BottomCtx
+    from aqt.toolbar import BottomToolbar as _BottomCtx
 except Exception:
     _BottomCtx = None
 try:
@@ -66,36 +70,155 @@ def on_webview_will_set_content(web_content: WebContent, context: Optional[Any])
     if not themed:
         return
 
-    accent = _config().get("accent", "#6c8cff")
+    cfg = _config()
+    accent = cfg.get("accent", "#6c8cff")
+    theme_pref = cfg.get("theme", "system")  # "system" | "light" | "dark"
+    # User-supplied display fonts are prepended to the existing stacks.
+    serif_user = (cfg.get("font_serif") or "").strip()
+    sans_user = (cfg.get("font_sans") or "").strip()
+    serif_decl = f"--rf-serif:{serif_user}, ui-serif, 'New York', Georgia, serif;" \
+        if serif_user else ""
+    sans_decl = f"--rf-sans:{sans_user}, ui-sans-serif, -apple-system, system-ui, sans-serif;" \
+        if sans_user else ""
     # tokens.css derives --accent from --rf-accent; inject the latter here.
+    # `data-rf-theme` on <html> forces light/dark over the system @media.
+    extras = ""
+    if theme_pref in ("light", "dark"):
+        extras = (
+            f"<script>document.documentElement.dataset.rfTheme="
+            f"'{theme_pref}';</script>"
+        )
     web_content.head += (
-        f"<style>:root,.night-mode,body{{--rf-accent:{accent};}}</style>"
+        f"<style>:root,.night-mode,body{{"
+        f"--rf-accent:{accent};{serif_decl}{sans_decl}}}</style>"
+        + extras
     )
     web_content.css.append(f"{WEB}/tokens.css")
 
-    if isinstance(context, (DeckBrowser, Overview)):
+    if isinstance(context, (DeckBrowser, Overview, Reviewer)):
+        # theme.css defines the --rf-* design tokens used by reviewer.css
+        # (back button, answer divider, progress strip), so the reviewer
+        # needs it too — otherwise it falls back to hardcoded dark colors
+        # even in light mode. The heavy homepage layout in theme.css is
+        # scoped to .ba-home / .ba-over and won't touch the reviewer.
         web_content.css.append(f"{WEB}/theme.css")
     if isinstance(context, DeckBrowser):
         web_content.css.append(f"{WEB}/heatmap.css")
+        web_content.js.append(f"{WEB}/heatmap.js")
+        # Tag the deck browser's <center> so theme.css can scope the heavy
+        # homepage layout to it alone — the Overview shares this stylesheet
+        # and must keep its own simple layout (just palette + type).
+        # Add `ba-single` when there's only one top-level deck so the hero
+        # composition can take over from the (now-hidden) table.
+        try:
+            klass = "ba-home" + (
+                " ba-single" if _top_decks_count() == 1 else " ba-multi"
+            )
+            web_content.body = web_content.body.replace(
+                "<center>", f'<center class="{klass}">', 1
+            )
+        except Exception:
+            pass
+    if isinstance(context, Overview):
+        # Scope Overview's <center> so theme.css can give it its own layout.
+        try:
+            web_content.body = web_content.body.replace(
+                "<center>", '<center class="ba-over">', 1
+            )
+        except Exception:
+            pass
+    # Sidebar nav — deck browser + overview only. The reviewer gets full
+    # focus (no sidebar) so the card area isn't competing with chrome.
+    if cfg.get("sidebar_nav", True) and isinstance(
+        context, (DeckBrowser, Overview)
+    ):
+        web_content.css.append(f"{WEB}/sidebar.css")
+        web_content.js.append(f"{WEB}/sidebar.js")
+        # Embed the standing data in <head> as a global so sidebar.js reads
+        # it synchronously on its first run.
+        try:
+            import json as _json
+            payload = _build_standing_payload()
+            web_content.head += (
+                "<script>window.__baStandingData = "
+                + _json.dumps(payload) + ";</script>"
+            )
+        except Exception:
+            pass
+    # Floating Settings cog — only when the sidebar is OFF on the homepage.
+    no_side = not cfg.get("sidebar_nav", True)
+    if no_side and isinstance(context, (DeckBrowser, Overview)):
+        web_content.css.append(f"{WEB}/sidebar.css")  # for .ba-cog
+        web_content.body = (
+            '<button class="ba-cog" onclick="pycmd(\'ba:settings\')" '
+            'title="BetterAnki settings">⚙</button>' + web_content.body
+        )
+    # Reviewer: no sidebar, but the user needs a way back to the deck list.
+    # A small floating "← Decks" link top-left, plus a subtle settings cog
+    # (so they can still tweak from inside a session if they really need to).
+    if isinstance(context, Reviewer):
+        web_content.css.append(f"{WEB}/sidebar.css")  # for .ba-back / .ba-cog
+        web_content.body = (
+            '<button class="ba-back" onclick="pycmd(\'ba:decks\')" '
+            'title="Back to decks (Esc)">Decks</button>'
+            + web_content.body
+        )
     if _is(context, _ToolbarCtx):
         web_content.css.append(f"{WEB}/toolbar.css")
-    if isinstance(context, Reviewer) and _config().get("show_progress", True):
+    # Reviewer's bottom bar (Show Answer, Edit, More, answer buttons) lives
+    # in BottomToolbar — restyle it so it doesn't look like 2003 Anki.
+    if _is(context, _BottomCtx):
+        web_content.css.append(f"{WEB}/reviewer-bottom.css")
+    # reviewer.css always loads on the reviewer — it owns the back button,
+    # answer divider, card chrome, AND the progress strip styling. Gating it
+    # on show_progress used to break the back button + card colors when the
+    # progress bar was off. show_progress only controls the JS that injects
+    # the progress bar element.
+    if isinstance(context, Reviewer):
         web_content.css.append(f"{WEB}/reviewer.css")
-        web_content.js.append(f"{WEB}/reviewer.js")
+        if cfg.get("show_progress", True):
+            web_content.js.append(f"{WEB}/reviewer.js")
 
 
 # --------------------------------------------------------------------------- #
 # Integrated action buttons (replace Anki's native bottom strip on the deck
 # list). These pycmds are handled by the deck browser's own link handler.
 # --------------------------------------------------------------------------- #
-def _actions_html() -> str:
-    return (
-        '<div class="ba-actions">'
-        "<button class=\"primary\" onclick=\"pycmd('create')\">+ New Deck</button>"
-        "<button onclick=\"pycmd('shared')\">Get Shared</button>"
-        "<button onclick=\"pycmd('import')\">Import File</button>"
-        "</div>"
-    )
+# --------------------------------------------------------------------------- #
+# Standing computation — used by the sidebar and the single-deck hero.
+# --------------------------------------------------------------------------- #
+
+
+def _standing() -> Dict[str, Any]:
+    counts = _counts_by_day()
+    shift = _day_shift_seconds()
+    today_idx = int((time.time() + shift) // 86400)
+    streak = 0
+    probe = today_idx if counts.get(today_idx, 0) > 0 else today_idx - 1
+    while counts.get(probe, 0) > 0:
+        streak += 1
+        probe -= 1
+    out: Dict[str, Any] = {
+        "today": counts.get(today_idx, 0),
+        "total": sum(counts.values()),
+        "streak": streak,
+        "new": None,
+        "learn": None,
+        "due": None,
+    }
+    try:
+        tree = mw.col.sched.deck_due_tree()
+        n = lr = rv = 0
+        for c in getattr(tree, "children", []):
+            n += int(getattr(c, "new_count", 0) or 0)
+            lr += int(getattr(c, "learn_count", 0) or 0)
+            rv += int(getattr(c, "review_count", 0) or 0)
+        out["new"], out["learn"], out["due"] = n, lr, rv
+    except Exception:
+        pass
+    return out
+
+
 
 
 # --------------------------------------------------------------------------- #
@@ -131,6 +254,11 @@ def _counts_by_day() -> Dict[int, int]:
     return {int(d): int(n) for d, n in rows}
 
 
+_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+_WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+
+
 def build_heatmap_html(weeks: int = 53) -> str:
     col = mw.col
     if not col:
@@ -147,7 +275,11 @@ def build_heatmap_html(weeks: int = 53) -> str:
     def dow(idx: int) -> int:  # 0 = Sunday .. 6 = Saturday
         return (idx + 4) % 7
 
-    start_idx = today_idx - (weeks * 7 - 1)
+    # Render the full history so you can scroll back through past years, but
+    # never fewer than `weeks` columns so a fresh collection still looks full.
+    floor_idx = today_idx - (weeks * 7 - 1)
+    earliest = min(counts) if counts else floor_idx
+    start_idx = min(earliest, floor_idx)
     grid_start = start_idx - dow(start_idx)  # back up to a Sunday
 
     nonzero = [c for c in counts.values() if c > 0]
@@ -158,9 +290,20 @@ def build_heatmap_html(weeks: int = 53) -> str:
             return 0
         return min(4, 1 + int(n * 4 / (peak + 0.0001)))
 
-    cells = []
     columns = (today_idx - grid_start) // 7 + 1
+
+    cells = []
+    month_spans = []  # [label, span_in_columns]
+    prev_month = prev_year = None
     for w in range(columns):
+        cd = date_for(grid_start + w * 7)  # the column's Sunday
+        if cd.month != prev_month:
+            year = f" {cd.year}" if cd.year != prev_year else ""
+            month_spans.append([_MONTHS[cd.month - 1] + year, 1])
+            prev_month, prev_year = cd.month, cd.year
+        else:
+            month_spans[-1][1] += 1
+
         col_cells = []
         for r in range(7):
             idx = grid_start + w * 7 + r
@@ -169,11 +312,31 @@ def build_heatmap_html(weeks: int = 53) -> str:
                 continue
             n = counts.get(idx, 0)
             d = date_for(idx)
-            tip = f"{d.isoformat()} — {n} review{'s' if n != 1 else ''}"
+            human = f"{_WEEKDAYS[dow(idx)]}, {d.day} {_MONTHS[d.month - 1]} {d.year}"
+            if idx == today_idx:
+                rel = "Today"
+            elif idx == today_idx - 1:
+                rel = "Yesterday"
+            else:
+                rel = ""
+            is_peak = "1" if (n == peak and peak >= 8) else "0"
             col_cells.append(
-                f'<div class="rf-hm-cell rf-hm-l{level(n)}" title="{tip}"></div>'
+                f'<div class="rf-hm-cell rf-hm-l{level(n)}" '
+                f'data-count="{n}" data-human="{human}" '
+                f'data-rel="{rel}" data-peak="{is_peak}"></div>'
             )
         cells.append('<div class="rf-hm-col">' + "".join(col_cells) + "</div>")
+
+    # Only label months wide enough to fit the text without colliding.
+    months_html = "".join(
+        f'<span class="rf-hm-mon" style="width:{span * 14}px">'
+        f'{label if span >= 4 else ""}</span>'
+        for label, span in month_spans
+    )
+    weekdays_html = "".join(
+        f'<span class="rf-hm-wd">{_WEEKDAYS[i] if i in (1, 3, 5) else ""}</span>'
+        for i in range(7)
+    )
 
     total = sum(counts.values())
     streak = 0
@@ -195,7 +358,16 @@ def build_heatmap_html(weeks: int = 53) -> str:
           <b>{total}</b> total
         </span>
       </div>
-      <div class="rf-hm-grid">{''.join(cells)}</div>
+      <div class="rf-hm-body">
+        <div class="rf-hm-wds">
+          <span class="rf-hm-mon-spacer"></span>
+          {weekdays_html}
+        </div>
+        <div class="rf-hm-scroll">
+          <div class="rf-hm-months">{months_html}</div>
+          <div class="rf-hm-grid">{''.join(cells)}</div>
+        </div>
+      </div>
       <div class="rf-hm-foot">
         <span>Less</span>{legend}<span>More</span>
       </div>
@@ -213,8 +385,24 @@ def on_deck_browser_will_render_content(
             heatmap = build_heatmap_html(int(cfg.get("heatmap_weeks", 53)))
         except Exception as e:
             heatmap = f"<!-- betteranki heatmap error: {e} -->"
-    # order: integrated actions, then Anki's #studiedToday, then heatmap
-    content.stats = _actions_html() + content.stats + heatmap
+    # Single-deck hero replaces the table (CSS hides the table in this mode).
+    hero = ""
+    try:
+        if _top_decks_count() == 1:
+            hero = _single_deck_hero()
+    except Exception:
+        pass
+    # Wrap the streak / today / all-time stats together with the heatmap so
+    # they read as a single integrated "practice record" band on the page.
+    try:
+        practice_head = _practice_header_html()
+    except Exception:
+        practice_head = ""
+    practice = (
+        f'<section class="ba-practice">{practice_head}{heatmap}</section>'
+        if heatmap else ""
+    )
+    content.stats = hero + content.stats + practice
 
 
 # --------------------------------------------------------------------------- #
@@ -233,24 +421,446 @@ def _set_bottom_visible(visible: bool) -> None:
 
 
 def _update_title() -> None:
+    # Anki sets "<profile> - Anki" late in profile load; collapse it to a
+    # clean "Anki" (we re-assert it after render so ours wins that race).
     try:
         mw.setWindowTitle("Anki")
     except Exception:
         pass
 
 
+def _mark_toolbar_state(state: Optional[str] = None) -> None:
+    """Tag the toolbar <body> with the current screen so toolbar.css can
+    highlight the active section (e.g. Decks on the deck list). The toolbar
+    DOM survives state changes — only the content webview swaps — so a single
+    eval sticks. Best-effort and fully guarded."""
+    tw = getattr(mw, "toolbarWeb", None)
+    if tw is None:
+        return
+    raw = state if state is not None else getattr(mw, "state", "")
+    safe = "".join(ch for ch in str(raw) if ch.isalnum())
+    try:
+        tw.eval(
+            "document.body && document.body.setAttribute("
+            "'data-rf-state','%s');" % safe
+        )
+    except Exception:
+        pass
+
+
 def on_state_did_change(new_state: str, old_state: str) -> None:
-    _set_bottom_visible(new_state != "deckBrowser")
+    cfg = _config()
+    hide_decks = cfg.get("hide_bottom_on_decks", True)
+    hide_over = cfg.get("hide_bottom_on_overview", True)
+    if new_state == "deckBrowser":
+        _set_bottom_visible(not hide_decks)
+    elif new_state == "overview":
+        _set_bottom_visible(not hide_over)
+    else:
+        _set_bottom_visible(True)  # always keep reviewer answer buttons
     _update_title()
+    _mark_toolbar_state(new_state)
+    _apply_chrome()
+    _mark_sidebar_active(new_state)
+    _push_sidebar_standing()
+
+
+def _post_render_fixups() -> None:
+    if _config().get("hide_bottom_on_decks", True):
+        _set_bottom_visible(False)
+    _update_title()
+    _mark_toolbar_state()
+    _apply_chrome()
+    _push_sidebar_standing()
+    _refresh_sync_status()
+
+
+# --------------------------------------------------------------------------- #
+# Sidebar nav — hide Anki's top toolbar webview and route `ba:*` pycmds.
+# --------------------------------------------------------------------------- #
+def _sidebar_on() -> bool:
+    return bool(_config().get("sidebar_nav", True))
+
+
+def _set_top_toolbar_visible(visible: bool) -> None:
+    tw = getattr(mw, "toolbarWeb", None)
+    if tw is None:
+        return
+    try:
+        tw.setVisible(visible)
+    except Exception:
+        pass
+
+
+def _apply_chrome() -> None:
+    """Hide Anki's top toolbar webview when the sidebar is on. Anki re-shows
+    it on state transitions, so we re-hide after each render."""
+    _set_top_toolbar_visible(not _sidebar_on())
+
+
+def _mark_sidebar_active(state: Optional[str] = None) -> None:
+    """Tell every themed webview's sidebar which item is current. Cheap and
+    safe — no-ops if the sidebar JS hasn't initialised yet."""
+    raw = state if state is not None else getattr(mw, "state", "")
+    cmd = {"deckBrowser": "decks", "overview": "decks",
+           "review": "decks"}.get(str(raw), "")
+    if not cmd:
+        return
+    js = "window.__baSetActive && window.__baSetActive('%s');" % cmd
+    for attr in ("web",):
+        w = getattr(mw, attr, None)
+        if w is not None:
+            try:
+                w.eval(js)
+            except Exception:
+                pass
+
+
+def _open_settings() -> None:
+    """Open the BetterAnki settings dialog."""
+    try:
+        from .settings import open_settings
+        open_settings(mw)
+    except Exception as e:
+        try:
+            from aqt.utils import showWarning
+            showWarning(f"BetterAnki settings: {e}")
+        except Exception:
+            pass
+
+
+def _on_js_message(handled, message, context):
+    """Dispatch `ba:<cmd>` pycmds from our sidebar/settings. Filter hook:
+    return (True, None) when we handle it."""
+    if not isinstance(message, str) or not message.startswith("ba:"):
+        return handled
+    cmd = message[3:]
+    try:
+        if cmd == "decks":
+            mw.moveToState("deckBrowser")
+        elif cmd == "add":
+            mw.onAddCard()
+        elif cmd == "browse":
+            mw.onBrowse()
+        elif cmd == "stats":
+            mw.onStats()
+        elif cmd == "sync":
+            mw.on_sync_button_clicked()
+        elif cmd == "settings":
+            _open_settings()
+        elif cmd == "create":
+            _open_new_deck()
+        elif cmd == "import":
+            mw.onImport()
+        elif cmd.startswith("study:"):
+            tail = cmd.split(":", 1)[1]
+            if tail.isdigit():
+                _start_studying(int(tail))
+            else:
+                return handled
+        elif cmd == "prefs":
+            try:
+                mw.onPrefs()
+            except Exception:
+                return handled
+        elif cmd.startswith("deck-opts:"):
+            tail = cmd.split(":", 1)[1]
+            if tail.isdigit():
+                # Use Anki's own _showOptions which puts up the full context
+                # menu — Rename, Options, Export, Delete — same as clicking
+                # the gear next to a deck row in the deck-list view.
+                try:
+                    mw.deckBrowser._showOptions(tail)  # type: ignore[attr-defined]
+                except Exception:
+                    # Fallback: at least open the review-settings dialog.
+                    try:
+                        from aqt.deckoptions import display_options_for_deck_id
+                        from anki.decks import DeckId
+                        display_options_for_deck_id(DeckId(int(tail)))
+                    except Exception:
+                        return handled
+            else:
+                return handled
+        else:
+            return handled
+    except Exception:
+        return handled
+    return (True, None)
+
+
+def _open_new_deck() -> None:
+    """Open the standard New Deck dialog (same one Anki uses)."""
+    try:
+        from aqt.operations.deck import add_deck_dialog
+        add_deck_dialog(parent=mw)
+    except Exception:
+        try:
+            # Fallback for older Anki APIs.
+            mw.deckBrowser._on_create()  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
+
+def _start_studying(did: int) -> None:
+    """Select a deck and go straight into the reviewer (one-click study from
+    the single-deck hero)."""
+    try:
+        mw.col.decks.select(did)
+        try:
+            mw.col.startTimebox()
+        except Exception:
+            pass
+        mw.moveToState("review")
+    except Exception:
+        # If anything goes wrong, fall back to opening the overview.
+        try:
+            mw.moveToState("overview")
+        except Exception:
+            pass
+
+
+def _practice_header_html() -> str:
+    """Streak + today/minutes/all-time as a header band above the heatmap.
+    These stats used to live in the sidebar; they fit better here next to
+    the visual record of activity."""
+    try:
+        s = _standing()
+    except Exception:
+        return ""
+    streak = int(s.get("streak", 0) or 0)
+    today_n = int(s.get("today", 0) or 0)
+    today_min = _minutes_today()
+    total = int(s.get("total", 0) or 0)
+    # Phosphor-inspired flame: tall body + a small inner highlight that
+    # reads as the cool core of the fire.
+    flame = (
+        '<svg class="ba-flame" viewBox="0 0 24 24" '
+        'fill="currentColor" aria-hidden="true">'
+        '<path d="M12 2c.5 3 2 4.5 3.5 6.2C17 10 18.5 12 18.5 14.5'
+        '  c0 3.6-2.9 6.5-6.5 6.5s-6.5-2.9-6.5-6.5c0-1.6.6-2.9 1.5-3.8'
+        '  C8 11.6 9 12 10 12c0-2 0-4.5 2-10z"/>'
+        '<path d="M12.5 17.5c-1.4 0-2.5-1.1-2.5-2.5c0-.9.4-1.6 1.2-2'
+        '  c.7-.4 1.6-.8 1.9-1.7c.5 1 1.3 1.7 1.6 2.6c.1.4.2.8.2 1.2'
+        '  c0 1.4-1.1 2.4-2.4 2.4z" opacity=".55"/>'
+        '</svg>'
+    )
+    return f"""
+    <header class="ba-practice-head">
+      <div class="ba-practice-streak" title="Consecutive days reviewed">
+        {flame}
+        <span class="ba-practice-streak-n">{streak}</span>
+        <span class="ba-practice-streak-l">day streak</span>
+      </div>
+      <div class="ba-practice-meta">
+        <div class="ba-practice-stat">
+          <span class="n">{today_n:,}</span>
+          <span class="l">today</span>
+        </div>
+        <div class="ba-practice-stat">
+          <span class="n">{today_min}</span>
+          <span class="l">minutes</span>
+        </div>
+        <div class="ba-practice-stat">
+          <span class="n">{total:,}</span>
+          <span class="l">all-time</span>
+        </div>
+      </div>
+    </header>
+    """
+
+
+def _single_deck_hero() -> str:
+    """When the user has just one top-level deck, present it as a hero with
+    the deck name + actionable stats + a primary Study button instead of a
+    one-row table that would feel silly."""
+    try:
+        tree = mw.col.sched.deck_due_tree()
+        kids = getattr(tree, "children", [])
+        if len(kids) != 1:
+            return ""
+        d = kids[0]
+        name = html.escape(getattr(d, "name", ""))
+        new_n = int(getattr(d, "new_count", 0) or 0)
+        learn_n = int(getattr(d, "learn_count", 0) or 0)
+        rev_n = int(getattr(d, "review_count", 0) or 0)
+        did = int(getattr(d, "deck_id", 0))
+        total = new_n + learn_n + rev_n
+        # The whole card IS the action — no button. Click anywhere on it to
+        # start studying. Big numbers carry the visual weight; deck title is
+        # small because it's incidental once the user knows which deck.
+        click = "" if not total else f"pycmd('ba:study:{did}')"
+        tabindex = "-1" if not total else "0"
+        disabled = "ba-hero--done" if not total else ""
+        # Deck name lives ABOVE the card now (a quiet header). The card is
+        # focused on the numbers + the click-anywhere action. The small gear
+        # next to the name opens this deck's options dialog (otherwise hard
+        # to reach in single-deck mode since the deck row is hidden).
+        return f"""
+        <header class="ba-deck-head ba-rise">
+          <h1 class="ba-deck-name">{name}</h1>
+          <button class="ba-deck-opts"
+                  onclick="event.stopPropagation();pycmd('ba:deck-opts:{did}')"
+                  title="Deck options" aria-label="Deck options">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5h0a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3h0a1.6 1.6 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.6 1.6 0 0 0 1 1.5h0a1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8v0a1.6 1.6 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/>
+            </svg>
+          </button>
+        </header>
+        <button class="ba-hero ba-rise {disabled}" tabindex="{tabindex}"
+                onclick="{click}" aria-label="Study {name}">
+          <div class="ba-hero-stats">
+            <div class="ba-hero-stat ba-due">
+              <span class="ba-hero-n">{rev_n}</span>
+              <span class="ba-hero-l">Due</span>
+            </div>
+            <div class="ba-hero-stat ba-new">
+              <span class="ba-hero-n">{new_n}</span>
+              <span class="ba-hero-l">New</span>
+            </div>
+            <div class="ba-hero-stat ba-learn">
+              <span class="ba-hero-n">{learn_n}</span>
+              <span class="ba-hero-l">Learn</span>
+            </div>
+          </div>
+        </button>
+        <script>
+          (function() {{
+            var card = document.querySelector('.ba-hero');
+            if (!card || card.classList.contains('ba-hero--done')) return;
+            document.addEventListener('keydown', function(e) {{
+              if ((e.key === 'Enter' || e.key === ' ')
+                  && !e.target.closest('input, textarea, [contenteditable]')) {{
+                e.preventDefault();
+                card.click();
+              }}
+            }});
+          }})();
+        </script>
+        """
+    except Exception:
+        return ""
+
+
+def _minutes_today() -> int:
+    """Total minutes reviewed today, from the revlog. 0 on any error."""
+    try:
+        shift = _day_shift_seconds()
+        today_idx = int((time.time() + shift) // 86400)
+        row = mw.col.db.first(
+            "select sum(time) from revlog where "
+            "cast((id/1000 + ?) / 86400 as int) = ?",
+            shift, today_idx,
+        )
+        if row and row[0]:
+            return int(float(row[0]) / 60000.0)
+    except Exception:
+        pass
+    return 0
+
+
+def _top_decks_count() -> int:
+    try:
+        tree = mw.col.sched.deck_due_tree()
+        return len(getattr(tree, "children", []))
+    except Exception:
+        return 0
+
+
+def _last_7_days_active() -> list:
+    """A 7-bool list, oldest → today, for the sidebar mini-grid."""
+    try:
+        counts = _counts_by_day()
+        shift = _day_shift_seconds()
+        today_idx = int((time.time() + shift) // 86400)
+        return [bool(counts.get(today_idx - i, 0) > 0) for i in range(6, -1, -1)]
+    except Exception:
+        return [False] * 7
+
+
+def _build_standing_payload() -> Dict[str, Any]:
+    s = _standing()
+    return {
+        "streak": s.get("streak", 0),
+        "due": s.get("due"),
+        "new": s.get("new"),
+        "learn": s.get("learn"),
+        "today": s.get("today", 0),
+        "todayMin": _minutes_today(),
+        "total": s.get("total", 0),
+        "singleDeck": _top_decks_count() == 1,
+        "last7": _last_7_days_active(),
+    }
+
+
+def _push_sidebar_sync(state: str) -> None:
+    """Update the sidebar's Sync indicator state. `state` is one of:
+    "" (clean), "pending", "full", "active"."""
+    safe = "".join(ch for ch in state if ch.isalnum())
+    js = "window.__baSetSync && window.__baSetSync('%s');" % safe
+    for w in (getattr(mw, "web", None),):
+        if w is not None:
+            try:
+                w.eval(js)
+            except Exception:
+                pass
+
+
+def _refresh_sync_status() -> None:
+    """Ask Anki for the current sync status and push it to the sidebar."""
+    try:
+        from aqt.sync import get_sync_status
+        from anki.sync_pb2 import SyncStatusResponse
+
+        def on_status(status):
+            req = getattr(status, "required", 0)
+            if req == SyncStatusResponse.NORMAL_SYNC:
+                _push_sidebar_sync("pending")
+            elif req == SyncStatusResponse.FULL_SYNC:
+                _push_sidebar_sync("full")
+            else:
+                _push_sidebar_sync("")
+        get_sync_status(mw, on_status)
+    except Exception:
+        # Older Anki / API change: fall back to silently clearing.
+        _push_sidebar_sync("")
+
+
+def _push_sidebar_standing() -> None:
+    """Push the day's standing into every webview's sidebar for live updates
+    (state changes, post-render). The initial render is bootstrapped via a
+    <head> global; this is for changes after that."""
+    try:
+        payload = _build_standing_payload()
+    except Exception:
+        return
+    import json as _json
+    js = f"window.__baSetStanding && window.__baSetStanding({_json.dumps(payload)});"
+    for attr in ("web",):
+        w = getattr(mw, attr, None)
+        if w is not None:
+            try:
+                w.eval(js)
+            except Exception:
+                pass
+    # Reviewer has its own webview.
+    rv = getattr(mw, "reviewer", None)
+    if rv is not None and getattr(rv, "web", None) is not None:
+        try:
+            rv.web.eval(js)
+        except Exception:
+            pass
 
 
 def on_deck_browser_did_render(deck_browser: DeckBrowser) -> None:
-    # The deck browser re-shows the bottom strip when it draws; hide it again
-    # on the next event-loop tick so our in-page actions stand alone.
+    # The deck browser re-shows the bottom strip and Anki (re)sets the window
+    # title around render; re-assert our state on the next event-loop tick so
+    # our in-page actions stand alone and the title/active-section stick.
     if QTimer is not None:
-        QTimer.singleShot(0, lambda: _set_bottom_visible(False))
+        QTimer.singleShot(0, _post_render_fixups)
     else:
-        _set_bottom_visible(False)
+        _post_render_fixups()
 
 
 # --------------------------------------------------------------------------- #
@@ -305,6 +915,64 @@ gui_hooks.state_did_change.append(on_state_did_change)
 gui_hooks.reviewer_did_show_question.append(on_show_question)
 gui_hooks.reviewer_did_show_answer.append(on_show_answer)
 gui_hooks.reviewer_will_end.append(on_reviewer_will_end)
+
+# Sidebar nav: route `ba:*` pycmds to the right mw methods + settings dialog.
+gui_hooks.webview_did_receive_js_message.append(_on_js_message)
+
+# Sync status indicator — show pending/full when there are changes to push,
+# and a soft pulse while a sync is in progress.
+try:
+    gui_hooks.sync_will_start.append(lambda *a: _push_sidebar_sync("active"))
+    gui_hooks.sync_did_finish.append(lambda *a: _refresh_sync_status())
+except Exception:
+    pass
+
+# Hide Anki's top toolbar webview as soon as the main window / profile is up.
+gui_hooks.main_window_did_init.append(_apply_chrome)
+gui_hooks.profile_did_open.append(_apply_chrome)
+
+# Re-tag the toolbar after Anki rebuilds it (e.g. sync-status redraw), so the
+# active-section highlight isn't lost. Optional — guarded per add-on policy.
+try:
+    gui_hooks.top_toolbar_did_redraw.append(lambda tb: _mark_toolbar_state())
+except Exception:
+    pass
+
+# Anki add-on dialog "Config" → open our settings UI instead of raw JSON.
+try:
+    mw.addonManager.setConfigAction(__name__, _open_settings)
+except Exception:
+    pass
+
+
+def _add_tools_menu_action() -> None:
+    try:
+        from aqt.qt import QAction, QKeySequence, QShortcut, Qt
+        act = QAction("BetterAnki Settings…", mw)
+        # Cmd+, on macOS / Ctrl+, elsewhere — the canonical "preferences" key.
+        act.setShortcut(QKeySequence("Ctrl+,"))
+        # Use the enum (NOT a literal int — the values differ between Qt5/6).
+        act.setShortcutContext(Qt.ShortcutContext.ApplicationShortcut)
+        act.triggered.connect(_open_settings)
+        mw.form.menuTools.addAction(act)
+        # Belt-and-braces: also register a global QShortcut on the main
+        # window so the key fires regardless of focus.
+        sc = QShortcut(QKeySequence("Ctrl+,"), mw)
+        sc.setContext(Qt.ShortcutContext.ApplicationShortcut)
+        sc.activated.connect(_open_settings)
+        # And a macOS Cmd+, equivalent (some Qt builds need it explicitly).
+        sc2 = QShortcut(QKeySequence("Meta+,"), mw)
+        sc2.setContext(Qt.ShortcutContext.ApplicationShortcut)
+        sc2.activated.connect(_open_settings)
+    except Exception as e:
+        try:
+            from aqt.utils import showWarning
+            showWarning(f"BetterAnki: failed to register settings shortcut: {e}")
+        except Exception:
+            pass
+
+
+gui_hooks.main_window_did_init.append(_add_tools_menu_action)
 
 
 # --------------------------------------------------------------------------- #
