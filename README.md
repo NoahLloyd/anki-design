@@ -63,6 +63,21 @@ theme/CSS work; the heatmap is empty). `make seed` rsyncs your real
 **Do not sync a seeded instance** — it shares your AnkiWeb account and
 syncing a copied collection can push unwanted merges upstream.
 
+Showcase data (no real collection involved):
+
+```
+make demo       # stop any old demo, seed a separate base, launch
+make demo-stop  # quit demo Anki
+make demo-clean # remove the entire demo base
+```
+
+`make demo` builds a *separate* `betteranki-demo` base under
+`Anki2-dev/`, populated by `scripts/seed_demo.py` with eleven themed decks
+(USMLE pathology/pharm, Spanish, Japanese N5, periodic table, world & US
+capitals, etc.) and ~4 years of day-by-day revlog history. Your real
+`Anki2/` collection is **never opened** by this path — the seeder refuses
+any target inside your real base.
+
 How parallelism works:
 
 - `make run` launches Anki's bundled venv binary directly with
