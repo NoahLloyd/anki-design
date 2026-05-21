@@ -15,6 +15,7 @@ web/*.js hot-reload live; Python changes still need an Anki restart.
 
 import datetime
 import html
+import math
 import os
 import threading
 import time
@@ -430,6 +431,64 @@ _MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
 _WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 
 
+def _heatmap_level_fn(counts: Dict[int, int]):
+    """Pick a bucketing algorithm based on the shape of the data, so the
+    four shades stay visually varied across very different histories
+    (uniform habit, gentle ramp, occasional cram days, long-tail outliers).
+
+    The chosen strategy depends on:
+      • # of distinct nonzero values (tiny histories get a direct mapping)
+      • peak / median ratio (skewness)
+      • peak / p95 ratio (outlier severity)
+    """
+    nonzero = sorted(c for c in counts.values() if c > 0)
+    if not nonzero:
+        return lambda n: 0
+
+    uniq = sorted(set(nonzero))
+    # Few distinct values → map each one directly to a shade. Avoids the
+    # awkwardness of bucketing 4 values into 4 buckets via arithmetic.
+    if len(uniq) <= 4:
+        direct = {v: i + 1 for i, v in enumerate(uniq)}
+        return lambda n: direct.get(n, 0) if n > 0 else 0
+
+    def pct(p: float) -> int:
+        # Nearest-rank percentile; safe for short lists.
+        i = max(0, min(len(nonzero) - 1, int(round(p * (len(nonzero) - 1)))))
+        return nonzero[i]
+
+    peak = nonzero[-1]
+    median = pct(0.5) or 1
+    p95 = pct(0.95) or 1
+    skew = peak / median
+    outlier = peak / p95
+
+    # Outlier-dominated (a few cram days dwarf the rest): quantile buckets
+    # so the outliers can't squash everyone else into L1.
+    if outlier > 3 and len(nonzero) >= 8:
+        q1, q2, q3 = pct(0.25), pct(0.5), pct(0.75)
+        def level_q(n: int) -> int:
+            if n <= 0: return 0
+            if n <= q1: return 1
+            if n <= q2: return 2
+            if n <= q3: return 3
+            return 4
+        return level_q
+
+    # Heavy skew without runaway outliers: log compresses the long tail.
+    if skew > 10:
+        log_peak = math.log1p(peak) or 1.0
+        return lambda n: 0 if n <= 0 else min(4, 1 + int(math.log1p(n) * 4 / log_peak))
+
+    # Moderate skew: sqrt is gentler than log, keeps mid-range readable.
+    if skew > 3:
+        sqrt_peak = math.sqrt(peak) or 1.0
+        return lambda n: 0 if n <= 0 else min(4, 1 + int(math.sqrt(n) * 4 / sqrt_peak))
+
+    # Tight distribution: plain linear is enough.
+    return lambda n: 0 if n <= 0 else min(4, 1 + int(n * 4 / (peak + 0.0001)))
+
+
 def build_heatmap_html(weeks: int = 53) -> str:
     col = mw.col
     if not col:
@@ -455,11 +514,7 @@ def build_heatmap_html(weeks: int = 53) -> str:
 
     nonzero = [c for c in counts.values() if c > 0]
     peak = max(nonzero) if nonzero else 1
-
-    def level(n: int) -> int:
-        if n <= 0:
-            return 0
-        return min(4, 1 + int(n * 4 / (peak + 0.0001)))
+    level = _heatmap_level_fn(counts)
 
     columns = (today_idx - grid_start) // 7 + 1
 
