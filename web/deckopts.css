@@ -31,14 +31,25 @@
   transform: translateY(0);
 }
 
-.ad-menu-item {
+/* All menu-item rules are scoped with `.ad-menu` to out-specify Anki's
+   `.fancy button` (0,1,1), which would otherwise paint a pill background,
+   border, drop shadow, and 15px corner radius on every item. */
+.ad-menu .ad-menu-item {
   display: flex;
   align-items: center;
   gap: 10px;
   width: 100%;
+  /* `<button>` defaults to content-box in WebKit, so width:100% + padding
+     pushes the hover background past the menu's right edge. Border-box
+     keeps the highlight inside. */
+  box-sizing: border-box;
+  -webkit-appearance: none;
+  appearance: none;
   background: transparent;
   border: 0;
+  box-shadow: none;
   border-radius: 6px;
+  margin: 0;
   padding: 8px 10px;
   text-align: left;
   font: 500 13px/1.2 inherit;
@@ -47,42 +58,44 @@
   cursor: pointer;
   transition: background 120ms ease, color 120ms ease;
 }
-.ad-menu-item:hover,
-.ad-menu-item:focus-visible {
+.ad-menu .ad-menu-item:hover,
+.ad-menu .ad-menu-item:focus-visible {
   background: var(--rf-row-hover, rgba(0, 0, 0, 0.04));
+  border: 0;
+  box-shadow: none;
   outline: none;
 }
-.ad-menu-item .ad-menu-icon {
+.ad-menu .ad-menu-item .ad-menu-icon {
   flex: none;
   width: 14px;
   height: 14px;
   color: var(--rf-ink-faint, #8b8576);
   transition: color 120ms ease;
 }
-.ad-menu-item:hover .ad-menu-icon,
-.ad-menu-item:focus-visible .ad-menu-icon {
+.ad-menu .ad-menu-item:hover .ad-menu-icon,
+.ad-menu .ad-menu-item:focus-visible .ad-menu-icon {
   color: var(--rf-ink-dim, #4a4538);
 }
-.ad-menu-item .ad-menu-l {
+.ad-menu .ad-menu-item .ad-menu-l {
   flex: 1;
 }
 
-.ad-menu-sep {
+.ad-menu .ad-menu-sep {
   height: 1px;
   margin: 4px 6px;
   background: var(--rf-line, #e3decf);
 }
 
 /* Destructive items — quieter at rest, take on a warning tint on hover. */
-.ad-menu-item.ad-menu-danger {
+.ad-menu .ad-menu-item.ad-menu-danger {
   color: var(--rf-ink-dim, #4a4538);
 }
-.ad-menu-item.ad-menu-danger:hover,
-.ad-menu-item.ad-menu-danger:focus-visible {
+.ad-menu .ad-menu-item.ad-menu-danger:hover,
+.ad-menu .ad-menu-item.ad-menu-danger:focus-visible {
   background: rgba(200, 68, 49, 0.08);
   color: #c84431;
 }
-.ad-menu-item.ad-menu-danger:hover .ad-menu-icon,
-.ad-menu-item.ad-menu-danger:focus-visible .ad-menu-icon {
+.ad-menu .ad-menu-item.ad-menu-danger:hover .ad-menu-icon,
+.ad-menu .ad-menu-item.ad-menu-danger:focus-visible .ad-menu-icon {
   color: #c84431;
 }
