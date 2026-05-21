@@ -14,20 +14,61 @@
 
   // ---- icons (inline SVG, stroke uses currentColor) -------------------- //
   // Lightweight stroke set tuned to feel editorial, not iconographic.
+  // Each icon is structured so the parts most worth animating on hover are
+  // wrapped in groups with stable class hooks (see sidebar.css).
   var ICONS = {
-    decks:    '<path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 12l9 4 9-4"/><path d="M3 17l9 4 9-4"/>',
-    add:      '<path d="M12 5v14"/><path d="M5 12h14"/>',
-    browse:   '<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.3-4.3"/>',
-    stats:    '<path d="M4 19V9"/><path d="M10 19V5"/><path d="M16 19v-8"/><path d="M22 19h-22"/>',
-    create:   '<path d="M12 5v14"/><path d="M5 12h14"/>',
-    "import": '<path d="M12 4v12"/><path d="M6 10l6-6 6 6"/><path d="M4 20h16"/>',
-    sync:     '<path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/>',
-    settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3h0a1.6 1.6 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.6 1.6 0 0 0 1 1.5h0a1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8v0a1.6 1.6 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/>',
+    decks:
+      '<g class="ba-i-decks-top"><path d="M3 7l9-4 9 4-9 4-9-4z"/></g>' +
+      '<g class="ba-i-decks-mid"><path d="M3 12l9 4 9-4"/></g>' +
+      '<g class="ba-i-decks-bot"><path d="M3 17l9 4 9-4"/></g>',
+    add:
+      '<g class="ba-i-plus">' +
+        '<path d="M12 5v14"/><path d="M5 12h14"/>' +
+      '</g>',
+    browse:
+      '<g class="ba-i-search-lens">' +
+        '<circle cx="11" cy="11" r="6.5"/>' +
+      '</g>' +
+      '<g class="ba-i-search-handle">' +
+        '<path d="M20 20l-4.3-4.3"/>' +
+      '</g>',
+    stats:
+      '<g class="ba-i-bars">' +
+        '<path class="ba-i-bar ba-i-bar-1" d="M4 19V9"/>' +
+        '<path class="ba-i-bar ba-i-bar-2" d="M10 19V5"/>' +
+        '<path class="ba-i-bar ba-i-bar-3" d="M16 19v-8"/>' +
+      '</g>' +
+      '<path d="M22 19h-22"/>',
+    create:
+      '<g class="ba-i-plus">' +
+        '<path d="M12 5v14"/><path d="M5 12h14"/>' +
+      '</g>',
+    submit:
+      '<g class="ba-i-submit">' +
+        '<path d="M5 12h14"/><path d="M13 6l6 6-6 6"/>' +
+      '</g>',
+    "import":
+      '<g class="ba-i-import">' +
+        '<path class="ba-i-import-stem"  d="M12 4v12"/>' +
+        '<path class="ba-i-import-head"  d="M6 10l6-6 6 6"/>' +
+      '</g>' +
+      '<path d="M4 20h16"/>',
+    sync:
+      '<g class="ba-i-sync">' +
+        '<path d="M21 12a9 9 0 1 1-3-6.7"/>' +
+        '<path d="M21 4v5h-5"/>' +
+      '</g>',
+    settings:
+      '<g class="ba-i-gear">' +
+        '<circle cx="12" cy="12" r="3"/>' +
+        '<path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3h0a1.6 1.6 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.6 1.6 0 0 0 1 1.5h0a1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8v0a1.6 1.6 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/>' +
+      '</g>',
   };
-  function iconSVG(name) {
+  function iconSVG(name, extraClass) {
     var body = ICONS[name];
     if (!body) return "";
-    return '<svg class="ba-side-icon" viewBox="0 0 24 24" width="14" height="14" '
+    var cls = "ba-side-icon" + (extraClass ? " " + extraClass : "");
+    return '<svg class="' + cls + '" viewBox="0 0 24 24" width="14" height="14" '
          + 'fill="none" stroke="currentColor" stroke-width="1.7" '
          + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
          + body + '</svg>';
@@ -60,10 +101,18 @@
     row.className = "ba-side-item ba-side-act ba-side-newdeck";
     row.setAttribute("data-cmd", "create");
     row.setAttribute("data-state", "idle");
-    // Label + input share a single flex slot so they overlap in place;
+    // The icon slot holds two SVGs stacked in the same 14×14 box: the
+    // idle plus and the active submit (right arrow). They cross-fade as
+    // the state changes — the shared horizontal stroke of both glyphs
+    // makes the swap read as a morph rather than a flicker.
+    //
+    // Label + input share their own flex slot so they overlap in place;
     // CSS fades one in as the other fades out — no layout shift.
     row.innerHTML =
-      iconSVG("create") +
+      '<span class="ba-side-newdeck-icons" aria-hidden="true">' +
+        iconSVG("create", "ba-side-newdeck-icon--plus") +
+        iconSVG("submit", "ba-side-newdeck-icon--submit") +
+      '</span>' +
       '<span class="ba-side-newdeck-swap">' +
         '<span class="ba-side-newdeck-label">New deck</span>' +
         '<input type="text" class="ba-side-newdeck-input" autocomplete="off" ' +
@@ -71,6 +120,7 @@
       '</span>';
 
     var input = row.querySelector(".ba-side-newdeck-input");
+    var iconBtn = row.querySelector(".ba-side-newdeck-icons");
 
     function open() {
       if (row.getAttribute("data-state") === "active") { input.focus(); return; }
@@ -93,7 +143,7 @@
       close();
     }
 
-    // Click on the row (outside the input) opens it.
+    // Click on the row (outside the input/icon) opens it.
     row.addEventListener("click", function (e) {
       if (row.getAttribute("data-state") === "active") return;
       e.preventDefault();
@@ -119,6 +169,20 @@
       setTimeout(function () {
         if (document.activeElement !== input) close();
       }, 80);
+    });
+
+    // In active state the icon doubles as a submit affordance — clicking
+    // it is equivalent to pressing Enter from the input. mousedown's
+    // preventDefault keeps the input focused so the submit reads its
+    // current value (and avoids the blur-then-close race).
+    iconBtn.addEventListener("mousedown", function (e) {
+      if (row.getAttribute("data-state") === "active") e.preventDefault();
+    });
+    iconBtn.addEventListener("click", function (e) {
+      if (row.getAttribute("data-state") !== "active") return; // idle: let it bubble
+      e.preventDefault();
+      e.stopPropagation();
+      submit();
     });
 
     // Public hook used by the Python handler when "ba:create" comes from a
