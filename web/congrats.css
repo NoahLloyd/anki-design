@@ -1,0 +1,366 @@
+/* Anki Design — redesigned congrats page.
+   Replaces Anki's stock "Congratulations!" Svelte page with a session debrief:
+   big-number stats for the deck just finished, plus a click-to-jump tree of
+   the user's other decks with work remaining. The sidebar is restored so the
+   shortcuts (D / A / B / T / ,) and the Decks/Add/Browse/Stats rows still
+   navigate. */
+
+/* Hide Anki's stock Svelte congrats panel — we replace it with our own. */
+.congrats,
+svelte-css-wrapper:has(> div.container > svelte-css-wrapper > div.col > div.congrats) {
+  display: none !important;
+}
+
+/* Anki's standard webview CSS for Svelte pages sets
+   `.night-mode button { --canvas: #606060 }` and adds night-mode body
+   classes that knock down our text colours. Override all of that so our
+   sidebar nav rows and deck-tree buttons read at the same weights as on
+   the regular homepage (theme.css/sidebar.css). */
+.ba-cg button,
+.ba-side button,
+button.ba-cg-deck,
+button.ba-side-item {
+  --canvas: transparent !important;
+  background-color: transparent !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+/* Sidebar text: explicit colours so the body's `.night_mode` classes can't
+   leach the text to near-invisible greys. */
+.ba-side .ba-side-item {
+  color: var(--rf-ink-dim) !important;
+  opacity: 1 !important;
+}
+.ba-side .ba-side-item[data-active="true"] {
+  color: var(--rf-ink) !important;
+  background-color: var(--rf-row-current) !important;
+}
+.ba-side .ba-side-item:hover {
+  background-color: var(--rf-row-hover) !important;
+}
+.ba-side .ba-side-icon {
+  color: var(--rf-ink-faint) !important;
+  opacity: 1 !important;
+}
+.ba-side .ba-side-item[data-active="true"] .ba-side-icon {
+  color: var(--rf-ink) !important;
+}
+/* Deck-tree buttons in the "Keep going" section. */
+.ba-cg .ba-cg-deck {
+  color: var(--rf-ink) !important;
+  opacity: 1 !important;
+}
+.ba-cg .ba-cg-deck:hover {
+  background-color: var(--rf-row-hover) !important;
+}
+/* Sub-deck names get the dim ink, parent stays full ink. */
+.ba-cg .ba-cg-deck[data-depth="1"] .ba-cg-deck-name,
+.ba-cg .ba-cg-deck[data-depth="2"] .ba-cg-deck-name,
+.ba-cg .ba-cg-deck[data-depth="3"] .ba-cg-deck-name {
+  color: var(--rf-ink-dim) !important;
+}
+
+/* Page bg + reset Anki's default canvas variable so our cream paper wins.
+   Note: only reset right-side padding so `body.ba-with-side` can keep its
+   `padding-left` (the sidebar gutter) intact. */
+html, body {
+  background: var(--rf-paper) !important;
+  color: var(--rf-ink) !important;
+  margin: 0 !important;
+  padding-top: 0 !important;
+  padding-right: 0 !important;
+  padding-bottom: 0 !important;
+  font-family: var(--rf-sans) !important;
+}
+body.ba-with-side {
+  padding-left: var(--rf-side-w, 264px) !important;
+}
+
+/* Outer page. A subtle fade-in (no translate so screenshots taken mid-frame
+   don't catch a misaligned position). Short duration so multi-render reloads
+   don't compound. */
+.ba-cg {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 56px 48px 72px;
+  text-align: left;
+  animation: ba-cg-fade 180ms ease both;
+}
+@media (max-width: 900px) {
+  .ba-cg { padding: 40px 28px 56px; }
+}
+@keyframes ba-cg-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ba-cg { animation: none; }
+}
+
+/* ---------------- Head: eyebrow + deck name ---------------- */
+.ba-cg-head {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  margin: 0 0 40px;
+  flex-wrap: wrap;
+}
+.ba-cg-eyebrow {
+  font: 600 11px/1 var(--rf-sans);
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--rf-ink-faint);
+}
+.ba-cg-deck {
+  font: 500 36px/1.05 var(--rf-serif);
+  letter-spacing: -0.02em;
+  color: var(--rf-ink);
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+/* ---------------- Stats grid: BIG numbers ---------------- */
+.ba-cg-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 32px 24px;
+  margin: 0 0 48px;
+  padding: 32px 0;
+  border-top: 1px solid var(--rf-line);
+  border-bottom: 1px solid var(--rf-line);
+}
+/* Anki's main webview often runs at ~660-900px CSS pixels (the sidebar
+   eats 264 of that), so four-column big-number stats don't fit cleanly.
+   Drop to a 2×2 grid until we have real room for 4 wide columns. */
+@media (max-width: 900px) {
+  .ba-cg-stats { grid-template-columns: repeat(2, 1fr); gap: 28px 18px; }
+}
+.ba-cg-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.ba-cg-stat-n {
+  font: 600 clamp(40px, 6vw, 56px)/1 var(--rf-sans);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1, "lnum" 1;
+  letter-spacing: -0.035em;
+  color: var(--rf-ink);
+  /* Don't truncate: a compound value like "10m 13s" must read complete.
+     Wraps to a second line only if it really can't fit. */
+  white-space: nowrap;
+  overflow: visible;
+}
+.ba-cg-stat-n .sub {
+  font-size: 0.45em;
+  color: var(--rf-ink-dim);
+  letter-spacing: -0.02em;
+  margin-left: 2px;
+}
+.ba-cg-stat-l {
+  font: 600 10.5px/1.2 var(--rf-sans);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--rf-ink-faint);
+}
+.ba-cg-stat-l b {
+  display: inline;
+  font: 500 11px/1.2 var(--rf-sans);
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: var(--rf-ink-dim);
+  margin-left: 6px;
+}
+
+/* ---------------- Accuracy strip ---------------- */
+.ba-cg-acc {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  margin: 0 0 56px;
+}
+@media (max-width: 900px) {
+  .ba-cg-acc { grid-template-columns: repeat(2, 1fr); }
+}
+.ba-cg-acc-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 2px solid var(--ba-cg-acc-c, var(--rf-line));
+}
+.ba-cg-acc-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  justify-content: space-between;
+}
+.ba-cg-acc-label {
+  font: 600 11px/1 var(--rf-sans);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--ba-cg-acc-c, var(--rf-ink-dim));
+}
+.ba-cg-acc-pct {
+  font: 500 13px/1 var(--rf-sans);
+  font-variant-numeric: tabular-nums;
+  color: var(--rf-ink-dim);
+}
+.ba-cg-acc-n {
+  font: 600 26px/1 var(--rf-sans);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1, "lnum" 1;
+  letter-spacing: -0.02em;
+  color: var(--rf-ink);
+}
+.ba-cg-acc-cell.again  { --ba-cg-acc-c: var(--rf-again, #c95a4b); }
+.ba-cg-acc-cell.hard   { --ba-cg-acc-c: var(--rf-learn, #c69142); }
+.ba-cg-acc-cell.good   { --ba-cg-acc-c: var(--rf-due, #4a8f6b); }
+.ba-cg-acc-cell.easy   { --ba-cg-acc-c: var(--rf-new, #3f7fb2); }
+:root[data-rf-theme="dark"] .ba-cg-acc-cell.again,
+:root.night-mode .ba-cg-acc-cell.again { --ba-cg-acc-c: #e07466; }
+:root[data-rf-theme="dark"] .ba-cg-acc-cell.hard,
+:root.night-mode .ba-cg-acc-cell.hard  { --ba-cg-acc-c: #d4a35d; }
+:root[data-rf-theme="dark"] .ba-cg-acc-cell.good,
+:root.night-mode .ba-cg-acc-cell.good  { --ba-cg-acc-c: #79b69b; }
+:root[data-rf-theme="dark"] .ba-cg-acc-cell.easy,
+:root.night-mode .ba-cg-acc-cell.easy  { --ba-cg-acc-c: #6fa9d8; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-rf-theme="light"]) .ba-cg-acc-cell.again { --ba-cg-acc-c: #e07466; }
+  :root:not([data-rf-theme="light"]) .ba-cg-acc-cell.hard  { --ba-cg-acc-c: #d4a35d; }
+  :root:not([data-rf-theme="light"]) .ba-cg-acc-cell.good  { --ba-cg-acc-c: #79b69b; }
+  :root:not([data-rf-theme="light"]) .ba-cg-acc-cell.easy  { --ba-cg-acc-c: #6fa9d8; }
+}
+
+/* Empty-stats state: when 0 cards were reviewed in this deck today. */
+.ba-cg-empty {
+  margin: 0 0 56px;
+  padding: 32px 0;
+  border-top: 1px solid var(--rf-line);
+  border-bottom: 1px solid var(--rf-line);
+  font: 500 14px/1.5 var(--rf-sans);
+  color: var(--rf-ink-dim);
+}
+
+/* ---------------- Other-decks tree ---------------- */
+.ba-cg-decks-h {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  margin: 0 0 18px;
+}
+.ba-cg-decks-h-title {
+  font: 600 11px/1 var(--rf-sans);
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--rf-ink-faint);
+}
+.ba-cg-decks-h-sub {
+  font: 500 13px/1 var(--rf-sans);
+  color: var(--rf-ink-dim);
+}
+
+.ba-cg-decks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.ba-cg-deck {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 10px;
+  margin: 0 -10px;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  width: calc(100% + 20px);
+  color: var(--rf-ink);
+  font: 500 16px/1.25 var(--rf-serif);
+  letter-spacing: -0.005em;
+  transition: background 160ms ease, color 160ms ease;
+}
+.ba-cg-deck:hover,
+.ba-cg-deck:focus-visible {
+  background: var(--rf-row-hover);
+  color: var(--rf-ink-strong);
+  outline: none;
+}
+.ba-cg-deck-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.ba-cg-deck-counts {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 14px;
+  font: 500 13.5px/1 var(--rf-sans);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1, "lnum" 1;
+}
+.ba-cg-deck-counts span { min-width: 22px; text-align: right; }
+.ba-cg-deck-counts .new    { color: var(--rf-new); }
+.ba-cg-deck-counts .learn  { color: var(--rf-learn); }
+.ba-cg-deck-counts .review { color: var(--rf-due); }
+.ba-cg-deck-counts .zero   { color: var(--rf-ink-faint); font-weight: 400; }
+
+/* Sub-decks: indent by depth via inline padding from JS. */
+.ba-cg-deck[data-depth="0"] .ba-cg-deck-name {
+  font-weight: 500;
+}
+.ba-cg-deck[data-depth="1"] .ba-cg-deck-name,
+.ba-cg-deck[data-depth="2"] .ba-cg-deck-name,
+.ba-cg-deck[data-depth="3"] .ba-cg-deck-name {
+  font-weight: 400;
+  color: var(--rf-ink-dim);
+  font-size: 15px;
+}
+.ba-cg-deck[data-depth="1"] .ba-cg-deck-name::before,
+.ba-cg-deck[data-depth="2"] .ba-cg-deck-name::before,
+.ba-cg-deck[data-depth="3"] .ba-cg-deck-name::before {
+  content: "";
+  display: inline-block;
+  width: 14px;
+  height: 1px;
+  background: var(--rf-line-2);
+  margin-right: 10px;
+  vertical-align: middle;
+}
+
+/* All clear: when other_decks is empty. */
+.ba-cg-clear {
+  padding: 28px 0;
+  font: 500 14px/1.5 var(--rf-sans);
+  color: var(--rf-ink-dim);
+}
+.ba-cg-clear b {
+  color: var(--rf-ink);
+  font-weight: 600;
+}
+
+/* ---------------- Foot: custom study link ---------------- */
+.ba-cg-foot {
+  margin: 56px 0 0;
+  padding: 24px 0 0;
+  border-top: 1px solid var(--rf-line);
+  font: 500 12.5px/1.4 var(--rf-sans);
+  color: var(--rf-ink-faint);
+}
+.ba-cg-foot a {
+  color: var(--rf-ink-dim);
+  text-decoration: none;
+  border-bottom: 1px solid var(--rf-line-2);
+  transition: color 160ms ease, border-color 160ms ease;
+}
+.ba-cg-foot a:hover {
+  color: var(--rf-ink);
+  border-bottom-color: currentColor;
+}

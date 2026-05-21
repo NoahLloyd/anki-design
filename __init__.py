@@ -510,6 +510,39 @@ def build_heatmap_html(weeks: int = 53) -> str:
     """
 
 
+# Force the deck-browser tree to render with every node expanded — the user
+# wants the full hierarchy visible by default, not a "+/-" puzzle. We patch
+# `_render_deck_node` (not the persisted collapsed state) so the user's saved
+# collapse flags stay intact in the backend; we just ignore them in this view.
+def _patch_deck_tree_always_expanded() -> None:
+    try:
+        if getattr(DeckBrowser, "_ad_expand_patched", False):
+            return
+        _orig = DeckBrowser._render_deck_node
+
+        def _patched(self, node, ctx):
+            try:
+                # Walk and flatten any persisted collapse so all rows render.
+                # Per-call: only mutates the in-memory tree node Anki built
+                # for this render. The next render rebuilds from the backend.
+                stack = [node]
+                while stack:
+                    n = stack.pop()
+                    try:
+                        n.collapsed = False
+                    except Exception:
+                        pass
+                    stack.extend(getattr(n, "children", []) or [])
+            except Exception:
+                pass
+            return _orig(self, node, ctx)
+
+        DeckBrowser._render_deck_node = _patched  # type: ignore[assignment]
+        DeckBrowser._ad_expand_patched = True  # type: ignore[attr-defined]
+    except Exception:
+        pass
+
+
 def on_deck_browser_will_render_content(
     deck_browser: DeckBrowser, content: DeckBrowserContent
 ) -> None:
@@ -1105,6 +1138,254 @@ def _refresh_sync_status() -> None:
         _push_sidebar_sync("")
 
 
+# --------------------------------------------------------------------------- #
+# Congrats page (Overview's empty state) — redesigned.
+# Anki's "Congratulations! You have finished this deck for now." is a Svelte
+# page loaded via `web.load_sveltekit_page("congrats")`. That bypasses the
+# `webview_will_set_content` filter, so we hook `webview_did_inject_style_into_page`
+# instead — it fires after Anki's standard CSS injection for *every* page,
+# including Svelte ones. We detect the congrats URL and inject our redesign.
+# --------------------------------------------------------------------------- #
+def _deck_and_descendant_ids(did: int) -> list:
+    """Return [did, *all_descendant_dids] for a given deck. Best-effort: we
+    fall back to just [did] if Anki's deck API surface differs."""
+    try:
+        ids = [int(did)]
+        try:
+            children = mw.col.decks.children(did)  # [(name, id), ...]
+            ids.extend(int(cid) for _name, cid in children)
+        except Exception:
+            pass
+        return ids
+    except Exception:
+        return [int(did)]
+
+
+def _finished_deck_stats(did: int) -> Dict[str, Any]:
+    """Today's revlog stats for the deck the user just finished (deck + its
+    descendants). Returns counts, total time, and ease breakdown — used as the
+    big-number panel on the redesigned congrats page."""
+    out: Dict[str, Any] = {
+        "thisDeck": 0,
+        "timeSec": 0,
+        "breakdown": {"again": 0, "hard": 0, "good": 0, "easy": 0},
+    }
+    try:
+        shift = _day_shift_seconds()
+        today_idx = int((time.time() + shift) // 86400)
+        ids = _deck_and_descendant_ids(int(did))
+        if not ids:
+            return out
+        placeholders = ",".join("?" * len(ids))
+        row = mw.col.db.first(
+            f"select count(*), coalesce(sum(time),0), "
+            f"sum(case when ease=1 then 1 else 0 end), "
+            f"sum(case when ease=2 then 1 else 0 end), "
+            f"sum(case when ease=3 then 1 else 0 end), "
+            f"sum(case when ease=4 then 1 else 0 end) "
+            f"from revlog where cid in "
+            f"(select id from cards where did in ({placeholders})) "
+            f"and cast((id/1000 + ?) / 86400 as int) = ?",
+            *ids, shift, today_idx,
+        )
+        if row:
+            cnt, ms, ag, hd, gd, ez = row
+            out["thisDeck"] = int(cnt or 0)
+            out["timeSec"] = int(float(ms or 0) / 1000.0)
+            out["breakdown"] = {
+                "again": int(ag or 0),
+                "hard":  int(hd or 0),
+                "good":  int(gd or 0),
+                "easy":  int(ez or 0),
+            }
+    except Exception:
+        pass
+    return out
+
+
+def _filtered_deck_tree(exclude_did: int) -> list:
+    """Flat list of decks with any work (new/learn/review > 0), excluding the
+    finished deck *and its descendants*. Preserves Anki's natural deck order
+    (a depth-first walk of `deck_due_tree()`), tagging each entry with its
+    visual depth so the JS can indent."""
+    out: list = []
+    try:
+        exclude = set(int(x) for x in _deck_and_descendant_ids(int(exclude_did)))
+        tree = mw.col.sched.deck_due_tree()
+
+        def visit(node, depth):
+            did = int(getattr(node, "deck_id", 0) or 0)
+            n = int(getattr(node, "new_count", 0) or 0)
+            l = int(getattr(node, "learn_count", 0) or 0)
+            r = int(getattr(node, "review_count", 0) or 0)
+            # Sum descendant work so a parent with empty self but stocked kids
+            # still surfaces as a row (we still show kids individually).
+            sub_total = n + l + r
+            kids = list(getattr(node, "children", []) or [])
+            kid_rows: list = []
+            for c in kids:
+                kid_rows.extend(visit(c, depth + 1))
+                cn = int(getattr(c, "new_count", 0) or 0)
+                cl = int(getattr(c, "learn_count", 0) or 0)
+                cr = int(getattr(c, "review_count", 0) or 0)
+                sub_total += cn + cl + cr
+            if did in exclude:
+                return []
+            if did == 0:
+                # Root — emit kids only.
+                return kid_rows
+            if sub_total == 0:
+                return []
+            # Leaf name (after the last "::" — Anki uses "^_" internally but
+            # the `name` field on the tree node is the display path; we want
+            # just the leaf for the row, the depth carries the hierarchy).
+            full = str(getattr(node, "name", "") or "")
+            leaf = full.split("::")[-1]
+            row = {
+                "did": did,
+                "name": leaf,
+                "depth": depth,
+                "new": n,
+                "learn": l,
+                "review": r,
+            }
+            return [row] + kid_rows
+
+        out = visit(tree, -1)  # root depth -1 so top-level decks are 0
+    except Exception:
+        pass
+    return out
+
+
+def _build_congrats_payload() -> Dict[str, Any]:
+    """Bundle everything congrats.js needs for the redesigned page."""
+    did = 0
+    name = ""
+    try:
+        did = int(mw.col.decks.get_current_id())
+    except Exception:
+        try:
+            did = int(mw.col.decks.current()["id"])
+        except Exception:
+            pass
+    try:
+        if did:
+            name = str(mw.col.decks.name(did) or "")
+            # Anki uses "::" as the display separator; the leaf reads best.
+            name = name.split("::")[-1] or name
+    except Exception:
+        pass
+    stats = _finished_deck_stats(did) if did else {}
+    today_total = 0
+    try:
+        s = _standing()
+        today_total = int(s.get("today", 0) or 0)
+    except Exception:
+        pass
+    return {
+        "deckId": did,
+        "deckName": name or "this deck",
+        "thisDeck": stats.get("thisDeck", 0),
+        "todayTotal": today_total,
+        "timeSec": stats.get("timeSec", 0),
+        "breakdown": stats.get("breakdown", {"again": 0, "hard": 0, "good": 0, "easy": 0}),
+        "otherDecks": _filtered_deck_tree(did),
+    }
+
+
+def _is_congrats_url(url: str) -> bool:
+    if not url:
+        return False
+    # Anki serves the Svelte congrats page at <serverURL>/congrats (with an
+    # optional `#night` fragment). Match flexibly so a future path tweak
+    # (e.g. /pages/congrats) doesn't break detection.
+    low = url.lower()
+    if low.endswith("/congrats") or low.endswith("/congrats/"):
+        return True
+    if "/congrats#" in low or "/congrats?" in low:
+        return True
+    if low.rstrip("/").endswith("/pages/congrats"):
+        return True
+    return False
+
+
+def on_webview_did_inject_style_into_page(webview) -> None:
+    """Detect Anki's congrats Svelte page after its dynamic styling finishes,
+    then graft our sidebar + redesign on top. Idempotent (the JS bails if it
+    already initialised), so re-firing on theme changes is harmless."""
+    try:
+        url = webview.page().url().toString()
+    except Exception:
+        return
+    if not _is_congrats_url(url):
+        return
+    try:
+        import json as _json
+        cfg = _config()
+        standing = _build_standing_payload()
+        # Dev override: if a `?did=N` query string is present on /congrats,
+        # build the payload around that deck instead of the current one.
+        # Lets the screenshot loop preview any deck without finishing it.
+        override_did = 0
+        try:
+            from urllib.parse import urlparse, parse_qs
+            qs = parse_qs(urlparse(url).query)
+            override_did = int((qs.get("did") or ["0"])[0])
+        except Exception:
+            override_did = 0
+        if override_did:
+            try:
+                mw.col.decks.select(override_did)
+            except Exception:
+                pass
+        congrats = _build_congrats_payload()
+        # Build a single eval that:
+        #   1. seeds globals BEFORE the scripts run,
+        #   2. injects our stylesheets (tokens, theme, logo, sidebar, congrats),
+        #   3. injects sidebar.js + congrats.js as scripts.
+        # Asset URLs are absolute relative paths served by Anki's media server
+        # (`/_addons/<dir>/web/<file>`), which works for Svelte pages too.
+        accent = cfg.get("accent", "#6c8cff")
+        theme_pref = cfg.get("theme", "system")
+        # Mirror webview_will_set_content's :root accent declaration so colors
+        # land consistently here too.
+        theme_attr = ""
+        if theme_pref in ("light", "dark"):
+            theme_attr = (
+                f"document.documentElement.dataset.rfTheme={_json.dumps(theme_pref)};"
+            )
+        accent_style = (
+            f"var st=document.createElement('style');"
+            f"st.textContent=':root,body{{--rf-accent:{accent};}}';"
+            f"document.head.appendChild(st);"
+        )
+        css_files = [
+            "tokens.css", "theme.css", "logo.css", "sidebar.css", "congrats.css",
+        ]
+        js_files = ["sidebar.js", "congrats.js"]
+        css_inject = ""
+        for f in css_files:
+            css_inject += (
+                f"(function(){{var l=document.createElement('link');"
+                f"l.rel='stylesheet';l.href='{WEB}/{f}';"
+                f"document.head.appendChild(l);}})();"
+            )
+        js_inject = ""
+        for f in js_files:
+            js_inject += (
+                f"(function(){{var s=document.createElement('script');"
+                f"s.src='{WEB}/{f}';s.defer=false;"
+                f"document.head.appendChild(s);}})();"
+            )
+        seed = (
+            f"window.__baStandingData={_json.dumps(standing)};"
+            f"window.__baCongratsData={_json.dumps(congrats)};"
+        )
+        webview.eval(theme_attr + seed + accent_style + css_inject + js_inject)
+    except Exception:
+        pass
+
+
 def _push_sidebar_standing() -> None:
     """Push the day's standing into every webview's sidebar for live updates
     (state changes, post-render). The initial render is bootstrapped via a
@@ -1343,6 +1624,17 @@ def on_reviewer_will_end() -> None:
 gui_hooks.webview_will_set_content.append(on_webview_will_set_content)
 gui_hooks.deck_browser_will_render_content.append(on_deck_browser_will_render_content)
 gui_hooks.deck_browser_did_render.append(on_deck_browser_did_render)
+# Expand-all patch applied at import time; idempotent.
+_patch_deck_tree_always_expanded()
+# Svelte pages (congrats) bypass webview_will_set_content; this hook fires
+# after every page's dynamic styling finishes, so we use it to detect the
+# congrats URL and inject our redesign.
+try:
+    gui_hooks.webview_did_inject_style_into_page.append(
+        on_webview_did_inject_style_into_page
+    )
+except Exception:
+    pass
 gui_hooks.state_did_change.append(on_state_did_change)
 gui_hooks.reviewer_did_show_question.append(on_show_question)
 gui_hooks.reviewer_did_show_answer.append(on_show_answer)
@@ -1938,6 +2230,80 @@ def _dev_run_cmd(raw: str) -> None:
                 rv.web.eval(js)
             elif getattr(mw, "web", None):
                 mw.web.eval(js)
+        elif cmd.startswith("mweval:"):
+            js = cmd[7:]
+            if getattr(mw, "web", None):
+                mw.web.eval(js)
+        elif cmd.startswith("mwecb:"):
+            # Like mweval but writes the result to .context/eval_result.txt
+            js = cmd[6:]
+            out = os.path.join(ADDON_SRC, ".context", "eval_result.txt")
+            if getattr(mw, "web", None):
+                def _cb(result, _path=out):
+                    try:
+                        with open(_path, "w") as fh:
+                            fh.write(str(result))
+                    except Exception:
+                        pass
+                mw.web.evalWithCallback(js, _cb)
+        elif cmd.startswith("congrats:"):
+            # Dev-only: force-load Anki's congrats page for the given deck id.
+            # Lets us preview the redesign against any deck without having
+            # to drain its actual due queue first.
+            try:
+                did = int(cmd.split(":", 1)[1])
+            except Exception:
+                _dev_cmd_log("congrats: bad did")
+                return
+            try:
+                mw.col.decks.select(did)
+            except Exception:
+                pass
+            # Patch the scheduler's _is_finished check to True so Anki's
+            # native Overview._renderPage takes its `_show_finished_screen`
+            # branch and loads the Svelte congrats page naturally. Restored
+            # after a short window so normal navigation isn't affected.
+            try:
+                sched = mw.col.sched
+                orig = getattr(sched, "_orig_is_finished", None) or sched._is_finished
+                sched._orig_is_finished = orig
+                sched._is_finished = lambda: True  # type: ignore
+                _dev_cmd_log("congrats: patched _is_finished")
+                def _restore(orig=orig):
+                    try:
+                        sched._is_finished = orig  # type: ignore
+                        _dev_cmd_log("congrats: restored _is_finished")
+                    except Exception:
+                        pass
+                if QTimer is not None:
+                    QTimer.singleShot(5000, _restore)
+            except Exception as e:
+                _dev_cmd_log(f"congrats patch err: {e!r}")
+            try:
+                mw.moveToState("overview")
+            except Exception:
+                pass
+        elif cmd.startswith("dump_main:"):
+            # Dump main webview HTML to a file (parallel to dump_card which
+            # uses the reviewer webview). Argument is the output filename
+            # under .context/.
+            out_name = cmd.split(":", 1)[1].strip() or "main.html"
+            out = os.path.join(ADDON_SRC, ".context", out_name)
+            if getattr(mw, "web", None):
+                js = (
+                    "JSON.stringify({"
+                    "html: document.documentElement.outerHTML,"
+                    "url: location.href,"
+                    "title: document.title"
+                    "})"
+                )
+                def _cb(result, _path=out):
+                    try:
+                        with open(_path, "w") as fh:
+                            fh.write(str(result))
+                    except Exception:
+                        pass
+                mw.web.evalWithCallback(js, _cb)
         elif cmd.startswith("beval:"):
             # Eval JS in the reviewer's bottom toolbar webview.
             js = cmd[6:]
