@@ -217,6 +217,9 @@ def on_webview_will_set_content(web_content: WebContent, context: Optional[Any])
     if isinstance(context, DeckBrowser):
         web_content.css.append(f"{WEB}/heatmap.css")
         web_content.js.append(f"{WEB}/heatmap.js")
+        # Whole-row click → study (skips the Overview page). Loaded
+        # unconditionally on the deck browser, independent of sidebar.
+        web_content.js.append(f"{WEB}/deckrow.js")
         # Tag the deck browser's <center> so theme.css can scope the heavy
         # homepage layout to it alone — the Overview shares this stylesheet
         # and must keep its own simple layout (just palette + type).
@@ -599,6 +602,10 @@ def on_state_did_change(new_state: str, old_state: str) -> None:
     _apply_chrome()
     _mark_sidebar_active(new_state)
     _push_sidebar_standing()
+    # Re-check pending sync on every navigation so the sidebar dot reflects
+    # current state after reviewing/adding/etc., not just on deck-browser
+    # render.
+    _refresh_sync_status()
 
 
 def _post_render_fixups() -> None:
@@ -668,7 +675,21 @@ def _open_settings() -> None:
 def _on_js_message(handled, message, context):
     """Dispatch `ba:<cmd>` pycmds from our sidebar/settings. Filter hook:
     return (True, None) when we handle it."""
-    if not isinstance(message, str) or not message.startswith("ba:"):
+    if not isinstance(message, str):
+        return handled
+    # Anki's deck browser emits `open:<did>` when a deck is clicked, which
+    # normally lands on the intermediate Overview page. Skip that and go
+    # straight into studying — same target as the single-deck hero.
+    if message.startswith("open:") and isinstance(context, DeckBrowser):
+        tail = message.split(":", 1)[1]
+        if tail.isdigit():
+            try:
+                _start_studying(int(tail))
+            except Exception:
+                return handled
+            return (True, None)
+        return handled
+    if not message.startswith("ba:"):
         return handled
     cmd = message[3:]
     try:

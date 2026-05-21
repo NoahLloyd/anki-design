@@ -327,15 +327,14 @@ body::before {
   color: var(--rf-accent, #6c8cff) !important;
   font-style: italic;
 }
+/* Collapse indicator (`+` / `-`) on parent decks. Hidden: clicking the
+   row goes straight to studying, so the toggle has no place here. */
 .ba-home a.collapse,
-.ba-home span.collapse {
-  display: inline-block;
-  width: 1.2em;
-  color: var(--rf-ink-faint) !important;
-  font: 400 13px/1 var(--rf-sans);
-  text-decoration: none !important;
-}
-.ba-home a.collapse:hover { color: var(--rf-ink) !important; }
+.ba-home span.collapse { display: none !important; }
+/* Whole row is a study target — make that intent visible on hover. */
+.ba-home tr.deck { cursor: pointer; }
+.ba-home tr.deck td.opts,
+.ba-home tr.deck td.opts a { cursor: pointer; }
 
 /* Counts: tight sans tabular figures grouped on the right of each row.
    Visually they read as a single small cluster, not three table columns. */
