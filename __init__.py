@@ -1197,33 +1197,6 @@ def _dev_screenshot(request_path: str) -> None:
                 pass
         if click_cog:
             QTimer.singleShot(700, _click_cog)
-        # Optionally force the Add card button into its hover state so the
-        # shortcut chip is visible in the screenshot (we can't simulate a
-        # real mouse hover during grab()).
-        force_add_hover = bool(req.get("force_add_hover"))
-        def _force_hover() -> None:
-            try:
-                from aqt import dialogs
-                ac = dialogs._dialogs.get("AddCards", [None, None])[1]
-                if ac is None:
-                    return
-                root = ac.centralWidget()
-                if root is None:
-                    return
-                for child in root.findChildren(type(ac)):
-                    pass  # no-op; the chip widget is on the Add button
-                # Walk children to find the _AddCardButton instance.
-                from PyQt6.QtWidgets import QPushButton as _QPB  # type: ignore
-                for b in root.findChildren(_QPB):
-                    if b.objectName() == "ba-add":
-                        chip = getattr(b, "chip", None)
-                        if chip is not None:
-                            chip.show()
-                        break
-            except Exception:
-                pass
-        if force_add_hover:
-            QTimer.singleShot(800, _force_hover)
 
         # Give the WebEngine view time to render (templates load async).
         # 1500ms is conservative; the editor.html bundle plus Svelte hydration

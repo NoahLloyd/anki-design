@@ -167,20 +167,22 @@ QFrame[role="rule"] {{
     border-color: {p['ink_faint']};
 }}
 
-/* Add card primary button — large pill with hover-revealed shortcut.
-   Override the generic #ba-footer QPushButton selector by using both IDs
-   so the cascade picks our accent fill. */
+/* Add card primary button — solid dark ink with the shortcut shown inline
+   at low opacity. No animated chip; the chip overlaid the opaque pill and
+   read as broken when it appeared. Compact corner radius (the previous
+   pill shape felt out of place next to the rest of the editorial chrome). */
 #ba-footer QPushButton#ba-add {{
     color: white;
-    background: {accent};
-    border: 1px solid {accent};
-    border-radius: 22px;
-    padding: 11px 22px;
-    font-size: 12pt;
+    background: {p['ink']};
+    border: 1px solid {p['ink']};
+    border-radius: 8px;
+    padding: 10px 18px;
+    font-size: 11.5pt;
     font-weight: 600;
     min-height: 22px;
-    min-width: 140px;
+    min-width: 160px;
     text-align: center;
+    letter-spacing: 0.2px;
 }}
 #ba-footer QPushButton#ba-add:hover {{
     background: {accent};
@@ -188,19 +190,17 @@ QFrame[role="rule"] {{
     border-color: {accent};
 }}
 #ba-footer QPushButton#ba-add:pressed {{
-    padding-top: 12px;
-    padding-bottom: 10px;
+    padding-top: 11px;
+    padding-bottom: 9px;
 }}
 
-/* The shortcut chip is a child QLabel positioned in Python on hover. */
-QLabel#ba-add-chip {{
-    background: rgba(255, 255, 255, 0.22);
-    color: white;
-    border-radius: 9px;
-    padding: 2px 8px;
-    font-size: 9.5pt;
-    font-weight: 600;
-    font-family: {SANS};
+/* Keyboard hint living next to the Add button. Quiet sans, mono-ish. */
+QLabel#ba-add-shortcut {{
+    color: {p['ink_faint']};
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11pt;
+    background: transparent;
+    padding: 0 4px;
 }}
 """
 
@@ -224,43 +224,97 @@ def _hrule(palette: Dict[str, str]) -> QFrame:
 
 
 # --------------------------------------------------------------------------- #
-# Primary "Add card" button with hover-revealed shortcut pill.
+# Inline pickers for note type / deck (replace the StudyDeck popup window).
 # --------------------------------------------------------------------------- #
-class _AddCardButton(QPushButton):
-    """QPushButton with a small shortcut chip ("⌘↩") in its right edge that
-    fades in on hover. The chip is a child QLabel positioned manually so it
-    doesn't interfere with the button's text alignment."""
+def _wire_inline_notetype_picker(
+    addcards: AddCards, btn: QPushButton
+) -> None:
+    """Replace the chooser's button click with a dropdown menu listing all
+    note types. Picking one calls the chooser's setter — same effect as the
+    original popup, no new window."""
+    try:
+        btn.clicked.disconnect()
+    except Exception:
+        pass
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
-        super().__init__("Add card", parent)
-        self.setObjectName("ba-add")
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.chip = QLabel("⌘↩", self)
-        self.chip.setObjectName("ba-add-chip")
-        self.chip.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        self.chip.hide()
-
-    def resizeEvent(self, e: Any) -> None:
-        super().resizeEvent(e)
+    def _open_menu() -> None:
         try:
-            cw = self.chip.sizeHint().width()
-            ch = self.chip.sizeHint().height()
-            self.chip.setGeometry(
-                self.width() - cw - 12,
-                (self.height() - ch) // 2,
-                cw,
-                ch,
+            m = QMenu(addcards)
+            current_id = int(addcards.notetype_chooser.selected_notetype_id)
+            for nid in sorted(
+                addcards.col.models.all_names_and_ids(),
+                key=lambda n: n.name.lower(),
+            ):
+                act = m.addAction(nid.name)
+                if int(nid.id) == current_id:
+                    f = act.font()
+                    f.setBold(True)
+                    act.setFont(f)
+                act.triggered.connect(
+                    lambda _, i=int(nid.id):
+                        setattr(addcards.notetype_chooser,
+                                "selected_notetype_id", i)
+                )
+            m.addSeparator()
+            edit = m.addAction("Manage note types…")
+            edit.triggered.connect(
+                lambda _: addcards.notetype_chooser.onEdit()
             )
+            pos = btn.mapToGlobal(QPoint(0, btn.height()))
+            m.exec(pos)
         except Exception:
             pass
+    btn.clicked.connect(_open_menu)
 
-    def enterEvent(self, e: Any) -> None:
-        super().enterEvent(e)
-        self.chip.show()
 
-    def leaveEvent(self, e: Any) -> None:
-        super().leaveEvent(e)
-        self.chip.hide()
+def _wire_inline_deck_picker(addcards: AddCards, btn: QPushButton) -> None:
+    """Same as above for decks. all_names_and_ids returns the hierarchical
+    names (Parent::Child); show them as-is so the structure is visible."""
+    try:
+        btn.clicked.disconnect()
+    except Exception:
+        pass
+
+    def _open_menu() -> None:
+        try:
+            m = QMenu(addcards)
+            current_id = int(addcards.deck_chooser.selected_deck_id)
+            decks = sorted(
+                addcards.col.decks.all_names_and_ids(skip_empty_default=False),
+                key=lambda d: d.name.lower(),
+            )
+            for dk in decks:
+                # Skip filtered decks — the add window can't target them.
+                try:
+                    dd = addcards.col.decks.get(dk.id, default=False)
+                    if dd and dd.get("dyn"):
+                        continue
+                except Exception:
+                    pass
+                act = m.addAction(dk.name)
+                if int(dk.id) == current_id:
+                    f = act.font()
+                    f.setBold(True)
+                    act.setFont(f)
+                act.triggered.connect(
+                    lambda _, i=int(dk.id):
+                        setattr(addcards.deck_chooser,
+                                "selected_deck_id", i)
+                )
+            m.addSeparator()
+            new = m.addAction("New deck…")
+            def _new_deck() -> None:
+                try:
+                    from aqt.operations.deck import add_deck_dialog
+                    add_deck_dialog(parent=addcards)
+                except Exception:
+                    pass
+            new.triggered.connect(lambda _: _new_deck())
+            pos = btn.mapToGlobal(QPoint(0, btn.height()))
+            m.exec(pos)
+        except Exception:
+            pass
+    btn.clicked.connect(_open_menu)
 
 
 # --------------------------------------------------------------------------- #
@@ -311,23 +365,25 @@ def _redress(addcards: AddCards) -> None:
     _hide_first_label(dk_area)
 
     # Style each chooser's QPushButton as an inline text link, and append a
-    # tiny ▾ so it reads as openable.
-    def _stylize(host: QWidget) -> None:
+    # tiny ▾ so it reads as openable. Also intercept the click to show a
+    # dropdown menu in-page instead of opening Anki's StudyDeck popup.
+    def _stylize(host: QWidget, kind: str) -> None:
         try:
             for b in host.findChildren(QPushButton):
                 b.setObjectName("ba-chooser")
                 b.setFlat(True)
                 b.setCursor(Qt.CursorShape.PointingHandCursor)
-                # Append the chevron once. Anki later may update the label
-                # via the chooser when the user picks a different type/deck
-                # — we re-append on a timer so the chevron always tags along.
                 txt = b.text()
                 if not txt.endswith(" ▾"):
                     b.setText(f"{txt} ▾")
+                if kind == "notetype":
+                    _wire_inline_notetype_picker(addcards, b)
+                elif kind == "deck":
+                    _wire_inline_deck_picker(addcards, b)
         except Exception:
             pass
-    _stylize(nt_area)
-    _stylize(dk_area)
+    _stylize(nt_area, "notetype")
+    _stylize(dk_area, "deck")
 
     # Build the sentence. Each fragment is a thin QLabel; chooser pushbuttons
     # sit between them.
@@ -366,7 +422,18 @@ def _redress(addcards: AddCards) -> None:
     recent_btn = QPushButton("Recent  ▾")
     recent_btn.setCursor(Qt.CursorShape.PointingHandCursor)
     recent_btn.setToolTip("Re-open a recently added note  (⌘⇧H)")
-    add_btn = _AddCardButton()
+    # Add card: clean dark button, just "Add card". The keyboard shortcut
+    # lives in a small dim label to its right (always visible, no animated
+    # chip — the hover chip overlaid the opaque pill which read as broken).
+    add_btn = QPushButton("Add card")
+    add_btn.setObjectName("ba-add")
+    add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+    add_btn.setToolTip("Add card  (⌘↩)")
+    add_shortcut = QLabel("⌘↩")
+    add_shortcut.setObjectName("ba-add-shortcut")
+    add_shortcut.setAlignment(
+        Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+    )
 
     # Wire Add to the native add button so all Anki logic / shortcuts /
     # hooks still fire.
@@ -437,6 +504,8 @@ def _redress(addcards: AddCards) -> None:
 
     fl.addWidget(recent_btn)
     fl.addStretch(1)
+    fl.addWidget(add_shortcut)
+    fl.addSpacing(8)
     fl.addWidget(add_btn)
     root_layout.addWidget(footer)
 
