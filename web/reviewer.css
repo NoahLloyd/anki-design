@@ -69,13 +69,28 @@ body {
   color: var(--rf-ink) !important;
   text-align: center;
   line-height: 1.5;
-  font-size: 25px;
+  /* Honor the user's reviewer-font-size setting (small/medium/large/
+     x-large maps to 16/19/22/26 in __init__.py); default to 25 to match
+     the reviewer rebuild's reading column. */
+  font-size: var(--rf-card-font-size, 25px);
   box-sizing: border-box;
 }
 
 /* Anki's reviewer.css sets margin:20px and a hairline `hr` rule — we wipe
    the margin (we control layout) and use our own divider. */
 body.card { max-width: none !important; }
+
+/* Generic `.card` rules for note-type wrappers (NOT body — handled above).
+   Some templates wrap content in <div class="card">; respect the
+   reviewer-card-width / reviewer-font-size settings the user picked in
+   the Settings tab. */
+:not(body).card {
+  max-width: var(--rf-card-max-width, 720px);
+  margin: 0 auto;
+  font-size: var(--rf-card-font-size, 25px);
+  line-height: 1.55;
+  color: var(--rf-ink);
+}
 
 /* Top header band — injected via __init__.py before the card div. Carries
    deck name (left) + count breakdown + position (right). No border under
@@ -315,7 +330,7 @@ body.card { max-width: none !important; }
   padding: 16px 32px 24px;
   margin: 0 auto;
   width: 100%;
-  max-width: 680px;
+  max-width: var(--rf-card-max-width, 680px);
   box-sizing: border-box;
   font-variant-numeric: tabular-nums;
 }
@@ -376,11 +391,11 @@ body.card { max-width: none !important; }
   align-items: center;
   padding: max(96px, 18vh) 32px 64px;
   width: 100%;
-  max-width: 680px;
+  max-width: var(--rf-card-max-width, 680px);
   margin: 0 auto;
   box-sizing: border-box;
   min-height: 0;
-  font-size: 25px;
+  font-size: var(--rf-card-font-size, 25px);
   line-height: 1.5;
   letter-spacing: -0.005em;
   overflow-y: auto;
@@ -393,7 +408,9 @@ body.card { max-width: none !important; }
 .card {
   color: var(--rf-ink) !important;
   background: transparent !important;
-  font-size: 25px !important;  /* override note-type's 20px default */
+  /* Override note-type's 20px default with the user's chosen size from
+     Settings (reviewer_font_size). Default 25 keeps the rebuild look. */
+  font-size: var(--rf-card-font-size, 25px) !important;
 }
 
 /* The answer divider — a quiet hairline, no caption. Anki's internal
