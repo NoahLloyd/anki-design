@@ -469,13 +469,12 @@ def build_heatmap_html(weeks: int = 53) -> str:
 
     cells = []
     month_spans = []  # [label, span_in_columns]
-    prev_month = prev_year = None
+    prev_month = None
     for w in range(columns):
         cd = date_for(grid_start + w * 7)  # the column's Sunday
         if cd.month != prev_month:
-            year = f" {cd.year}" if cd.year != prev_year else ""
-            month_spans.append([_MONTHS[cd.month - 1] + year, 1])
-            prev_month, prev_year = cd.month, cd.year
+            month_spans.append([_MONTHS[cd.month - 1], 1])
+            prev_month = cd.month
         else:
             month_spans[-1][1] += 1
 
@@ -595,14 +594,8 @@ def on_deck_browser_will_render_content(
             hero = _single_deck_hero()
     except Exception:
         pass
-    # Wrap the streak / today / all-time stats together with the heatmap so
-    # they read as a single integrated "practice record" band on the page.
-    try:
-        practice_head = _practice_header_html()
-    except Exception:
-        practice_head = ""
     practice = (
-        f'<section class="ba-practice">{practice_head}{heatmap}</section>'
+        f'<section class="ba-practice">{heatmap}</section>'
         if heatmap else ""
     )
     content.stats = hero + content.stats + practice
@@ -1027,62 +1020,6 @@ def _start_studying(did: int) -> None:
             mw.moveToState("overview")
         except Exception:
             pass
-
-
-def _practice_header_html() -> str:
-    """Streak + today/minutes/all-time as a header band above the heatmap.
-    These stats used to live in the sidebar; they fit better here next to
-    the visual record of activity. The streak block is suppressed when
-    ``show_streak`` is False so users who don't track streaks aren't
-    pressured by a count they don't care about."""
-    try:
-        s = _standing()
-    except Exception:
-        return ""
-    streak = int(s.get("streak", 0) or 0)
-    today_n = int(s.get("today", 0) or 0)
-    today_min = _minutes_today()
-    total = int(s.get("total", 0) or 0)
-    streak_html = ""
-    if _config().get("show_streak", True):
-        # Phosphor-inspired flame: tall body + a small inner highlight that
-        # reads as the cool core of the fire.
-        flame = (
-            '<svg class="ba-flame" viewBox="0 0 24 24" '
-            'fill="currentColor" aria-hidden="true">'
-            '<path d="M12 2c.5 3 2 4.5 3.5 6.2C17 10 18.5 12 18.5 14.5'
-            '  c0 3.6-2.9 6.5-6.5 6.5s-6.5-2.9-6.5-6.5c0-1.6.6-2.9 1.5-3.8'
-            '  C8 11.6 9 12 10 12c0-2 0-4.5 2-10z"/>'
-            '<path d="M12.5 17.5c-1.4 0-2.5-1.1-2.5-2.5c0-.9.4-1.6 1.2-2'
-            '  c.7-.4 1.6-.8 1.9-1.7c.5 1 1.3 1.7 1.6 2.6c.1.4.2.8.2 1.2'
-            '  c0 1.4-1.1 2.4-2.4 2.4z" opacity=".55"/>'
-            '</svg>'
-        )
-        streak_html = f"""
-        <div class="ba-practice-streak" title="Consecutive days reviewed">
-            {flame}
-            <span class="ba-practice-streak-n">{streak}</span>
-            <span class="ba-practice-streak-l">day streak</span>
-        </div>"""
-    return f"""
-    <header class="ba-practice-head">
-      {streak_html}
-      <div class="ba-practice-meta">
-        <div class="ba-practice-stat">
-          <span class="n">{today_n:,}</span>
-          <span class="l">today</span>
-        </div>
-        <div class="ba-practice-stat">
-          <span class="n">{today_min}</span>
-          <span class="l">minutes</span>
-        </div>
-        <div class="ba-practice-stat">
-          <span class="n">{total:,}</span>
-          <span class="l">all-time</span>
-        </div>
-      </div>
-    </header>
-    """
 
 
 def _single_deck_hero() -> str:
