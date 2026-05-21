@@ -35,9 +35,11 @@ from aqt.qt import (
     QEvent,
     QFrame,
     QHBoxLayout,
+    QKeySequence,
     QLabel,
     QObject,
     QPushButton,
+    QShortcut,
     QSize,
     Qt,
     QVBoxLayout,
@@ -215,6 +217,30 @@ def open_inline(parent_mw: Any = None) -> None:
         # Resize the overlay with the main window.
         flt = _EmbedFilter(overlay)
         cw.installEventFilter(flt)
+
+        # Cmd/Ctrl+Return and Cmd/Ctrl+Enter — Anki's native shortcuts for
+        # Add are bound by AddCards itself, but they all target the now-
+        # destroyed addButton (the original buttonBox died with the old
+        # centralWidget). Rebuild them on the overlay so the user's
+        # standard "submit" keystrokes work while the embed is up.
+        # We route through `ac._ba_safe_add` (set in addcard.py _redress)
+        # rather than `ac.add_current_note` directly, so any exception
+        # gets printed instead of bubbling into Anki's crash dialog.
+        safe_add = getattr(ac, "_ba_safe_add", None) or ac.add_current_note
+        try:
+            for keys in ("Ctrl+Return", "Ctrl+Enter"):
+                sc = QShortcut(QKeySequence(keys), overlay)
+                sc.setAutoRepeat(False)
+                sc.setContext(Qt.ShortcutContext.ApplicationShortcut)
+                sc.activated.connect(safe_add)
+            # Esc closes the embed (Anki's native QMainWindow Esc was lost
+            # along with the buttonBox's closeButton).
+            esc = QShortcut(QKeySequence("Escape"), overlay)
+            esc.setAutoRepeat(False)
+            esc.setContext(Qt.ShortcutContext.WindowShortcut)
+            esc.activated.connect(close_inline)
+        except Exception:
+            pass
 
         _state["addcards"] = ac
         _state["overlay"] = overlay

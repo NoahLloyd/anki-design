@@ -8,8 +8,12 @@ DIR="$REPO/.context/dump-requests"
 mkdir -p "$DIR" "$(dirname "$OUT")"
 ABS_OUT="$(cd "$(dirname "$OUT")" && pwd)/$(basename "$OUT")"
 REQ="$DIR/req-$(date +%s%N).json"
+KIND=""
+if [[ "${3:-}" == "--addcards-editor" ]]; then
+  KIND="addcards-editor"
+fi
 cat > "$REQ" <<JSON
-{"out":"${ABS_OUT}","title":"${TITLE}"}
+{"out":"${ABS_OUT}","title":"${TITLE}","kind":"${KIND}"}
 JSON
 for _ in $(seq 1 200); do
   if [[ -f "$ABS_OUT" ]] && [[ ! -f "$REQ" ]]; then

@@ -17,6 +17,9 @@ COG_FLAG="false"
 HOVER_FLAG="false"
 TYPE_FLAG="false"
 EMBED_FLAG="false"
+CLOSE_FLAG="false"
+TRIGGER_KEY=""
+MW_WIDTH="0"
 for arg in "$@"; do
   case "$arg" in
     --open-addcards) OPEN_FLAG="true" ;;
@@ -25,8 +28,14 @@ for arg in "$@"; do
     --hover-add) HOVER_FLAG="true" ;;
     --click-type) TYPE_FLAG="true" ;;
     --embed-add) OPEN_FLAG="true"; EMBED_FLAG="true" ;;
+    --close-after) CLOSE_FLAG="true" ;;
+    --trigger=*) TRIGGER_KEY="${arg#--trigger=}" ;;
+    --width=*) MW_WIDTH="${arg#--width=}" ;;
+    --hover-add-btn) HOVER_FLAG="true" ;;
+    --test-add) TEST_ADD="true" ;;
   esac
 done
+TEST_ADD="${TEST_ADD:-false}"
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 DIR="$REPO/.context/screenshot-requests"
@@ -44,7 +53,12 @@ cat > "$REQ" <<JSON
   "click_cog": ${COG_FLAG},
   "click_type": ${TYPE_FLAG},
   "embed_add": ${EMBED_FLAG},
-  "delay_ms": 2000
+  "close_after": ${CLOSE_FLAG},
+  "trigger_shortcut": "${TRIGGER_KEY}",
+  "mw_width": ${MW_WIDTH},
+  "hover_add": ${HOVER_FLAG},
+  "test_add": ${TEST_ADD},
+  "delay_ms": 6500
 }
 JSON
 
