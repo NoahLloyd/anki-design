@@ -178,35 +178,60 @@ body.ba-with-side {
 
 /* Streak block + lifetime stats moved out of the sidebar; styles deleted. */
 
-/* ---------------------------- SYNC ---------------------------- */
+/* ---------------------------- SYNC ----------------------------
+   Three states the sidebar reflects:
+   • pending  — local changes to push; soft accent dot, slow breathe
+   • full     — full re-sync required; amber dot (stronger signal, no pulse)
+   • active   — sync in progress; icon spins
+   The dot lives at the row's right edge (next to the label) so it doesn't
+   visually compete with the icon, and gets a faint ring matching the row
+   background so it reads as a token rather than a colored speck. */
 .ba-side-item[data-cmd="sync"] .ba-side-dot {
-  width: 6px; height: 6px; border-radius: 999px;
+  width: 7px; height: 7px; border-radius: 999px;
   background: var(--rf-ink-faint);
   opacity: 0;
   transition: opacity 160ms ease, background 160ms ease,
-              transform 160ms ease;
+              box-shadow 160ms ease;
 }
-/* "Pending" (changes to push) — small accent dot */
+/* "Pending" (changes to push) — accent dot + matching icon/label tint. */
 .ba-side-item[data-cmd="sync"].ba-sync-pending { color: var(--rf-accent, #6c8cff); }
 .ba-side-item[data-cmd="sync"].ba-sync-pending .ba-side-icon { color: var(--rf-accent, #6c8cff); }
 .ba-side-item[data-cmd="sync"].ba-sync-pending .ba-side-dot {
   opacity: 1;
   background: var(--rf-accent, #6c8cff);
+  box-shadow: 0 0 0 2px color-mix(in srgb,
+                var(--rf-accent, #6c8cff) 22%, transparent);
+  animation: ba-sync-breathe 2.8s ease-in-out infinite;
 }
-/* "Full" — warning amber */
+/* "Full" — warning amber, no pulse (it's a stronger signal than pending). */
 .ba-side-item[data-cmd="sync"].ba-sync-full { color: var(--rf-learn); }
 .ba-side-item[data-cmd="sync"].ba-sync-full  .ba-side-icon { color: var(--rf-learn); }
 .ba-side-item[data-cmd="sync"].ba-sync-full  .ba-side-dot {
   opacity: 1;
   background: var(--rf-learn);
+  box-shadow: 0 0 0 2px color-mix(in srgb,
+                var(--rf-learn) 22%, transparent);
 }
-/* Active sync — gentle pulse */
+/* Active sync — icon spins. */
 .ba-side-item[data-cmd="sync"].ba-sync-active .ba-side-icon {
   animation: ba-spin 1.4s linear infinite;
 }
 @keyframes ba-spin {
   from { transform: rotate(0deg); }
   to   { transform: rotate(360deg); }
+}
+/* Slow breath for the pending dot. Stays mostly visible — the cycle just
+   nudges opacity down and back so it catches the eye at a glance without
+   pulling attention away from real work. */
+@keyframes ba-sync-breathe {
+  0%, 100% { opacity: 1;    transform: scale(1); }
+  50%      { opacity: 0.55; transform: scale(0.88); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ba-side-item[data-cmd="sync"].ba-sync-pending .ba-side-dot,
+  .ba-side-item[data-cmd="sync"].ba-sync-active .ba-side-icon {
+    animation: none;
+  }
 }
 
 /* Hover-reveal keyboard chip (absolutely positioned, no layout shift). */
