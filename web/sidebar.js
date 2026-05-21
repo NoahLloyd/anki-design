@@ -137,7 +137,7 @@
       // with red period) scales from a single CSS variable.
       + '<div class="ba-side-head">'
       +   '<span class="ad-logo ba-side-mark" aria-label="Anki Design">'
-      +     '<span class="ad-mark">anki<span class="ad-dot">.</span></span>'
+      +     '<span class="ad-mark">anki<span class="ad-dot" aria-hidden="true"><span class="ad-pupil"></span></span></span>'
       +     '<span class="ad-design">'
       +       '<span class="ad-d">D</span>'
       +       '<span class="ad-e">E</span>'
@@ -163,7 +163,6 @@
     if (mark) {
       mark.setAttribute("role", "link");
       mark.setAttribute("tabindex", "0");
-      mark.setAttribute("title", "anki.design");
       mark.addEventListener("click", function (e) {
         e.preventDefault();
         send("website");
@@ -174,6 +173,43 @@
           send("website");
         }
       });
+
+      // Googly period — on hover, the red dot grows an eyeball that tracks
+      // the cursor. A ring of ink particles bursts outward around it just
+      // as the sclera finishes scaling in (timing handled by the CSS
+      // animation-delay on .ad-dot::after). Skipped under reduced-motion.
+      var dot = mark.querySelector(".ad-dot");
+      var pupil = dot ? dot.querySelector(".ad-pupil") : null;
+      var reducedMotion = window.matchMedia
+        && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (dot && pupil && !reducedMotion) {
+        var trackPupil = function (e) {
+          var rect = dot.getBoundingClientRect();
+          var cx = rect.left + rect.width / 2;
+          var cy = rect.top + rect.height / 2;
+          var dx = e.clientX - cx;
+          var dy = e.clientY - cy;
+          var size = parseFloat(getComputedStyle(dot).fontSize) || 20;
+          var maxPx = 0.18 * size;
+          var len = Math.hypot(dx, dy);
+          if (len > maxPx) {
+            dx = (dx / len) * maxPx;
+            dy = (dy / len) * maxPx;
+          }
+          pupil.style.setProperty("--ad-pupil-x", dx + "px");
+          pupil.style.setProperty("--ad-pupil-y", dy + "px");
+        };
+        mark.addEventListener("mouseenter", function () {
+          document.addEventListener("mousemove", trackPupil);
+          mark.classList.add("is-burst");
+        });
+        mark.addEventListener("mouseleave", function () {
+          document.removeEventListener("mousemove", trackPupil);
+          pupil.style.setProperty("--ad-pupil-x", "0px");
+          pupil.style.setProperty("--ad-pupil-y", "0px");
+          mark.classList.remove("is-burst");
+        });
+      }
     }
 
     // Primary nav

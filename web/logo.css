@@ -42,10 +42,86 @@
   letter-spacing: -0.02em;
   line-height: 1;
   color: var(--ad-logo-ink);
+  /* Stacking context so the hover eye (and its particle burst) paints
+     above the DESIGN letters where they overlap. */
+  position: relative;
+  z-index: 1;
 }
 
+/* The "dot" is no longer the literal period character — it's a drawn
+   pupil so we can move it freely and grow a sclera around it. The .ad-dot
+   wrapper reserves a period's natural advance width so the wordmark
+   layout doesn't shift. */
 .ad-logo .ad-dot {
   color: var(--ad-logo-dot);
+  position: relative;
+  display: inline-block;
+  width: 0.26em;
+  height: 1em;
+  vertical-align: baseline;
+}
+
+/* Pupil: the visible red disc. At rest it looks exactly like the period
+   that used to live here. On hover, JS translates it within the sclera
+   to follow the cursor. */
+.ad-logo .ad-pupil {
+  position: absolute;
+  left: 50%;
+  bottom: 0.1em;
+  width: 0.22em;
+  height: 0.22em;
+  border-radius: 50%;
+  background: var(--ad-logo-dot);
+  transform: translate(
+    calc(-50% + var(--ad-pupil-x, 0px)),
+    calc(50% + var(--ad-pupil-y, 0px))
+  );
+  transition: transform 140ms cubic-bezier(.2, .8, .2, 1);
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* Sclera: the white eyeball that grows behind the pupil on hover. Sized
+   to be unmistakably an eye — about cap-height tall. Springy entry. */
+.ad-logo .ad-dot::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 0.1em;
+  width: 0.95em;
+  height: 0.95em;
+  border-radius: 50%;
+  background: #fff;
+  border: 0.07em solid var(--ad-logo-ink, #1a1a1a);
+  transform: translate(-50%, 50%) scale(0);
+  transition: transform 260ms cubic-bezier(.34, 1.56, .64, 1);
+  z-index: 0;
+  pointer-events: none;
+  box-sizing: content-box;
+}
+
+/* Shock-burst: six little ink-colored dots positioned via box-shadow that
+   radiate outward during the double-take. Invisible at rest. */
+.ad-logo .ad-dot::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 0.1em;
+  width: 0.08em;
+  height: 0.08em;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow:
+     0     -0.9em 0 var(--ad-logo-ink, #1a1a1a),
+     0.78em -0.45em 0 var(--ad-logo-ink, #1a1a1a),
+     0.78em  0.45em 0 var(--ad-logo-ink, #1a1a1a),
+     0      0.9em 0 var(--ad-logo-ink, #1a1a1a),
+    -0.78em  0.45em 0 var(--ad-logo-ink, #1a1a1a),
+    -0.78em -0.45em 0 var(--ad-logo-ink, #1a1a1a);
+  transform: translate(-50%, 50%) scale(0);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 2;
 }
 
 .ad-logo .ad-design {
@@ -63,6 +139,8 @@
      same logical font-size — pull it down so the bases align optically. */
   position: relative;
   top: calc(var(--ad-logo-size) * 0.07);
+  /* Lower stacking than .ad-mark so the hover eye covers any overlap. */
+  z-index: 0;
 }
 
 /* Per-letter wobble: each letter has its own size jitter, tiny rotation,
@@ -72,6 +150,7 @@
 .ad-logo .ad-design > span {
   display: inline-block;
   transform-origin: 50% 70%;
+  transition: transform 360ms cubic-bezier(.2, .8, .2, 1);
 }
 
 .ad-logo .ad-d {
@@ -102,6 +181,29 @@
   font-size: calc(var(--ad-logo-size) * 1.154);   /* 90/78 */
   margin-left: -0.07em;
   transform: rotate(0deg) translateY(0.04em);
+}
+
+/* Hover: the red period becomes a googly eye that tracks the cursor.
+   After a beat, ink particles burst outward around the eye. The DESIGN
+   letters do nothing — they just sit there in their wobble (and render
+   beneath the eye where it overlaps them, via the .ad-mark z-index). */
+@media (prefers-reduced-motion: no-preference) {
+  .ad-logo:hover .ad-dot::before {
+    transform: translate(-50%, 50%) scale(1);
+  }
+
+  /* Particle burst: ink dots radiate outward, fade in then out. The
+     240ms animation-delay times it so the burst lands right as the
+     sclera finishes its 260ms scale-in transition. */
+  .ad-logo.is-burst .ad-dot::after {
+    animation: ad-shock 460ms 240ms ease-out;
+  }
+  @keyframes ad-shock {
+    0%   { transform: translate(-50%, 50%) scale(0); opacity: 0; }
+    20%  { transform: translate(-50%, 50%) scale(1); opacity: 1; }
+    60%  { transform: translate(-50%, 50%) scale(1.35); opacity: 0.85; }
+    100% { transform: translate(-50%, 50%) scale(1.7); opacity: 0; }
+  }
 }
 
 /* Size convenience modifiers. */
