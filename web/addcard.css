@@ -42,13 +42,39 @@ html[data-ba-editor="add"] {
 html[data-ba-editor="add"][data-rf-theme="dark"] {
   --ba-paper: #0b0c0f;
   --ba-panel: #15171c;
-  --ba-field: #f6f3ec;
+  --ba-field: #15171c;
   --ba-ink: #eceae2;
   --ba-ink-dim: #9b978a;
   --ba-ink-faint: #5d5a51;
   --ba-line: rgba(236, 234, 226, 0.10);
   --ba-line-strong: rgba(236, 234, 226, 0.20);
   --ba-hover: rgba(236, 234, 226, 0.05);
+}
+
+/* Re-map Anki's editor tokens onto our theme. Anki's editor.css defines
+   --fg, --canvas-elevated, --fg-subtle etc. and toggles them via the
+   .night-mode class on <html>. If the user has Anki Design's theme set
+   to "light" but Anki itself is in night mode (or vice versa), Anki's
+   tokens leak into Svelte field contents — most visibly as near-white
+   --fg text on our white field. Re-binding the tokens to our --ba-*
+   variables keeps the field readable regardless of which mode Anki is
+   in. CSS variables inherit across shadow DOM boundaries, so this
+   reaches inside the Svelte rich-text-input / plain-text-input. */
+html[data-ba-editor="add"] {
+  --fg: var(--ba-ink);
+  --fg-subtle: var(--ba-ink-faint);
+  --fg-disabled: var(--ba-ink-faint);
+  --fg-faint: var(--ba-ink-faint);
+  --bs-body-color: var(--ba-ink);
+  --bs-body-bg: var(--ba-paper);
+  --canvas: var(--ba-paper);
+  --canvas-elevated: var(--ba-field);
+  --canvas-inset: var(--ba-paper);
+  --canvas-overlay: var(--ba-panel);
+  --canvas-code: var(--ba-field);
+  --border: var(--ba-line-strong);
+  --border-subtle: var(--ba-line);
+  --border-strong: var(--ba-ink-faint);
 }
 
 html[data-ba-editor="add"], html[data-ba-editor="add"] body {

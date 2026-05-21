@@ -43,7 +43,6 @@
     if (!nt) return false;
     var btns = nt.querySelectorAll(".label-button");
     if (!btns.length) return false;
-    var any = false;
     btns.forEach(function (b) {
       // The label text lives in a leaf text node; walk to find it.
       var walker = document.createTreeWalker(b, NodeFilter.SHOW_TEXT, null);
@@ -54,11 +53,14 @@
         var stripped = txt.replace(/[…]+|\.{2,}/g, "").trim();
         if (stripped !== txt) {
           n.nodeValue = stripped;
-          any = true;
         }
       }
     });
-    return any;
+    // Truthy = setup ran (buttons present) regardless of whether dots
+    // were actually stripped this pass. settleAndReveal needs this so
+    // the reveal doesn't wait for a "did work" signal that never comes
+    // when the labels are already clean from a prior pass.
+    return true;
   }
 
   // Tag editor never collapses — we want the tags input always visible so
@@ -124,11 +126,38 @@
     }, 200);
   }
 
-  reorderToolbar();
-  poll(reorderToolbar, 30);
-  poll(cleanFieldsCardsLabels, 30);
-  poll(keepTagsOpen, 30);
-  poll(moveTagsIntoFields, 30);
+  // Fade the body in once the DOM has been rearranged — the inline <style>
+  // in head starts it at opacity 0 so the FOUC + the toolbar/tag shuffle
+  // never reach the user. Reveal as soon as the first pass of each setup
+  // function succeeds, or after a hard timeout (so a failed setup never
+  // leaves the user staring at a blank pane).
+  function reveal() {
+    if (document.documentElement.dataset.baReady === "1") return;
+    document.documentElement.dataset.baReady = "1";
+    // Tell Python the editor body is ready to be revealed — this drops
+    // the open-time curtain that addcard_embed.open_inline put up to
+    // hide the webview's load-time white flash. Wrapped in try since
+    // pycmd may not be available in every embedding context.
+    try { pycmd("ba:embed-ready"); } catch (_) {}
+  }
+  function settleAndReveal() {
+    var ok = true;
+    ok = reorderToolbar() && ok;
+    ok = cleanFieldsCardsLabels() && ok;
+    ok = keepTagsOpen() && ok;
+    ok = moveTagsIntoFields() && ok;
+    if (ok) reveal();
+    return ok;
+  }
+  // First pass right after this script runs — if the editor is already
+  // ready (often the case), this reveals on the next frame with no flash.
+  // Otherwise keep trying until everything succeeds or we hit the cap.
+  if (!settleAndReveal()) {
+    poll(settleAndReveal, 30);
+  }
+  // Safety net: 700ms after script start, reveal unconditionally so a
+  // partial init never traps the user in a blank pane.
+  setTimeout(reveal, 700);
 
   // Re-apply whenever the toolbar mutates (Anki re-renders on field focus
   // change, notetype switch, etc.).
