@@ -461,9 +461,18 @@ def _redress(addcards: AddCards) -> None:
     except Exception:
         pass
 
-    # Build our root container.
+    # Build our root container. Palette + autoFillBackground paints it
+    # opaque paper from the very first frame, beating the QSS pass which
+    # can lag by one frame and otherwise shows as a white flash on dark
+    # mode when the embed is first shown.
     root = QWidget()
     root.setObjectName("ba-root")
+    root.setAutoFillBackground(True)
+    _root_pal = root.palette()
+    _root_pal.setColor(
+        QPalette.ColorRole.Window, QColor(palette["paper"])
+    )
+    root.setPalette(_root_pal)
     root_layout = QVBoxLayout(root)
     root_layout.setContentsMargins(0, 0, 0, 0)
     root_layout.setSpacing(0)
@@ -714,6 +723,35 @@ def _redress(addcards: AddCards) -> None:
         pass
     try:
         addcards.setCentralWidget(root)
+    except Exception:
+        pass
+
+    # Pre-paint the editor webview's default page background to match our
+    # paper color. Anki's webview.py already calls setBackgroundColor with
+    # its own theme-aware CANVAS color (#f5f5f5 in light, #2c2c2c in dark)
+    # — if the user's Anki app is in light mode but the addon is in dark
+    # mode, that means the page bg is near-white. Overriding it here keeps
+    # the webview painting paper-dark from the very first frame.
+    # Also paint the Qt widget itself (the backing store under the
+    # Chromium compositor) so anything that briefly paints before the GPU
+    # layer is uploaded shows paper, not the default widget white.
+    try:
+        web = getattr(addcards.editor, "web", None)
+        if web is not None:
+            page = web.page()
+            if page is not None:
+                page.setBackgroundColor(QColor(palette["paper"]))
+            try:
+                web.setStyleSheet(
+                    f"QWidget {{ background: {palette['paper']}; }}"
+                )
+                web.setAutoFillBackground(True)
+                _wp = web.palette()
+                _wp.setColor(QPalette.ColorRole.Window, QColor(palette["paper"]))
+                _wp.setColor(QPalette.ColorRole.Base, QColor(palette["paper"]))
+                web.setPalette(_wp)
+            except Exception:
+                pass
     except Exception:
         pass
 

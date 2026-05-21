@@ -32,16 +32,20 @@ from typing import Any, Optional
 
 from aqt import mw
 from aqt.qt import (
+    QApplication,
+    QColor,
     QEvent,
     QFrame,
     QHBoxLayout,
     QKeySequence,
     QLabel,
     QObject,
+    QPalette,
     QPushButton,
     QShortcut,
     QSize,
     Qt,
+    QTimer,
     QVBoxLayout,
     QWidget,
 )
@@ -106,6 +110,21 @@ class _EmbedFilter(QObject):
 _state: dict = {"addcards": None, "overlay": None, "filter": None}
 
 
+def drop_curtain() -> None:
+    """Tear down the anti-flash curtain put up by open_inline.
+
+    Called from the `ba:embed-ready` pycmd that addcard.js fires from
+    its reveal() once the editor body has had a chance to settle. Safe
+    to call multiple times — second+ calls are no-ops."""
+    c = _state.pop("curtain", None)
+    _state.pop("drop_curtain", None)
+    if c is not None:
+        try:
+            c.deleteLater()
+        except Exception:
+            pass
+
+
 def close_inline() -> None:
     """Tear down the embedded view and restore the deck browser.
 
@@ -123,6 +142,17 @@ def close_inline() -> None:
     _state["addcards"] = None
     _state["overlay"] = None
     _state["filter"] = None
+    cw_palette = _state.pop("cw_palette", None)
+    # Drop the anti-flash curtain if it's still up (close_inline can fire
+    # before the editor finished loading, e.g. user hits Esc immediately
+    # after clicking Add).
+    curtain = _state.pop("curtain", None)
+    if curtain is not None:
+        try:
+            curtain.deleteLater()
+        except Exception:
+            pass
+    _state.pop("drop_curtain", None)
 
     if overlay is not None:
         try:
@@ -132,6 +162,14 @@ def close_inline() -> None:
             pass
         try:
             overlay.deleteLater()
+        except Exception:
+            pass
+    # Restore the centralwidget's original palette (we tinted it paper
+    # while the embed was open so any first-frame Qt gap painted dark
+    # instead of the default white).
+    if cw_palette is not None:
+        try:
+            mw.form.centralwidget.setPalette(cw_palette)
         except Exception:
             pass
     if ac is not None:
@@ -172,12 +210,70 @@ def open_inline(parent_mw: Any = None) -> None:
         except Exception:
             pass
         return
+    if _state.get("curtain") is not None:
+        # A curtain is up — we're already mid-open from a previous call
+        # (processEvents below can re-enter on rapid double-click). Bail
+        # so we don't stack a second curtain + AddCards.
+        return
+
+    # --- Curtain (anti-flash) ---------------------------------------
+    # Slam an opaque paper-colored QFrame over the embed area BEFORE any
+    # of the AddCards / webview machinery runs. While the curtain is up,
+    # everything underneath (the QWebEngineView's default white page bg,
+    # any Qt widget that briefly paints with the wrong palette, the
+    # toolbar/tag DOM reshuffle inside the editor) is invisible. We pump
+    # one round of events to force the curtain's paint before we kick
+    # off the heavy AddCards work, then drop the curtain only after the
+    # editor's page loadFinished fires plus a small grace for the JS to
+    # settle.
+    from . import addcard as _addcard
+    palette, _ = _addcard._resolve_palette()
+    paper_qc = QColor(palette["paper"])
+    cw = parent_mw.form.centralwidget
+
+    curtain = QFrame(cw)
+    curtain.setObjectName("ba-embed-curtain")
+    curtain.setAutoFillBackground(True)
+    _cu_pal = curtain.palette()
+    _cu_pal.setColor(QPalette.ColorRole.Window, paper_qc)
+    curtain.setPalette(_cu_pal)
+    curtain.setStyleSheet(
+        "QFrame#ba-embed-curtain { background: " + palette["paper"] + "; }"
+    )
+    curtain.setGeometry(SIDEBAR_W, 0, cw.width() - SIDEBAR_W, cw.height())
+    curtain.show()
+    curtain.raise_()
+    _state["curtain"] = curtain
+    # Force the curtain to paint NOW (repaint is synchronous, processEvents
+    # pumps any pending events) so when the AddCards work below starts
+    # spinning up Chromium and mounting Svelte, the curtain is already
+    # covering the embed area and the user never sees what's underneath.
+    try:
+        curtain.repaint()
+        QApplication.processEvents()
+    except Exception:
+        pass
 
     try:
         from aqt.addcards import AddCards
-        ac = AddCards(parent_mw)
+        # Anki's AddCards.__init__ ends with `self.show()`, which would
+        # flash the standalone QMainWindow on screen for one paint before
+        # we reparent its central widget into the overlay and hide the
+        # window. Subclassing to no-op `show()` keeps it invisible from
+        # the start; everything else (geometry restore, hook firing,
+        # central-widget construction via _redress) still runs in the
+        # parent constructor.
+        class _EmbeddedAddCards(AddCards):  # type: ignore[misc, valid-type]
+            def show(self) -> None:  # noqa: D401 — Qt method override
+                pass
+        ac = _EmbeddedAddCards(parent_mw)
     except Exception:
         # Anki's normal flow as a last resort.
+        try:
+            curtain.deleteLater()
+        except Exception:
+            pass
+        _state["curtain"] = None
         try:
             parent_mw.onAddCard()
         except Exception:
@@ -186,11 +282,19 @@ def open_inline(parent_mw: Any = None) -> None:
 
     try:
         central = ac.centralWidget()
+
         # Build an overlay frame holding the redressed AddCards centralWidget.
         # No back button — the sidebar already has a "Decks" item, and we
         # mark "Add" as active there so the user knows what tab they're on.
         overlay = QFrame(parent_mw.form.centralwidget)
         overlay.setObjectName("ba-embed")
+        # Palette + autoFillBackground paints the QFrame opaque in the
+        # native paint path, beating any first-frame transparency before
+        # the QSS is committed.
+        overlay.setAutoFillBackground(True)
+        _ov_pal = overlay.palette()
+        _ov_pal.setColor(QPalette.ColorRole.Window, paper_qc)
+        overlay.setPalette(_ov_pal)
         overlay.setStyleSheet(_palette_styles())
 
         v = QVBoxLayout(overlay)
@@ -208,11 +312,53 @@ def open_inline(parent_mw: Any = None) -> None:
 
         # Position over the right of the central area.
         cw = parent_mw.form.centralwidget
+        # Paint the main centralwidget paper for the duration of the
+        # embed. mw.web normally covers it, but during the brief frame
+        # where the overlay show triggers a layout pass on the main
+        # window, Qt can momentarily expose the centralwidget's palette
+        # bg — which on Anki-light + addon-dark is near-white, producing
+        # the white flash. Stash the original palette so we can restore
+        # it on close.
+        try:
+            _state["cw_palette"] = QPalette(cw.palette())
+            _cw_pal = cw.palette()
+            _cw_pal.setColor(QPalette.ColorRole.Window, paper_qc)
+            cw.setPalette(_cw_pal)
+        except Exception:
+            pass
         overlay.setGeometry(
             SIDEBAR_W, 0, cw.width() - SIDEBAR_W, cw.height()
         )
         overlay.show()
         overlay.raise_()
+        # Curtain must stay on top of the overlay while everything inside
+        # the overlay (editor webview, Svelte mount, our addcard.js DOM
+        # shuffle) is still settling.
+        try:
+            curtain.raise_()
+        except Exception:
+            pass
+
+        # Drop the curtain when addcard.js fires ba:embed-ready from
+        # reveal() — that's the exact moment the editor body switches
+        # from opacity 0 to opacity 1 and starts its fade-in. Dropping
+        # then means the curtain (paper) gives way to the same paper
+        # bg of the editor body, with content fading in on top. No
+        # white/black/snap visible to the user.
+        # Backstop: if the pycmd never fires (very rare — JS error in
+        # the editor, sandboxed iframe, etc.), fall back to loadFinished
+        # plus a short grace, and a hard cap so the user is never
+        # stranded behind paper.
+        try:
+            page = ac.editor.web.page()
+
+            def _on_loaded(_ok: bool) -> None:
+                QTimer.singleShot(280, drop_curtain)
+
+            page.loadFinished.connect(_on_loaded)
+        except Exception:
+            pass
+        QTimer.singleShot(2000, drop_curtain)
 
         # Resize the overlay with the main window.
         flt = _EmbedFilter(overlay)
