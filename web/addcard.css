@@ -30,7 +30,7 @@ html[data-ba-editor="add"] {
   html[data-ba-editor="add"]:not([data-rf-theme="light"]) {
     --ba-paper: #0b0c0f;
     --ba-panel: #15171c;
-    --ba-field: #f6f3ec;
+    --ba-field: #15171c;
     --ba-ink: #eceae2;
     --ba-ink-dim: #9b978a;
     --ba-ink-faint: #5d5a51;
@@ -68,24 +68,55 @@ html[data-ba-editor="add"] .image-overlay:empty {
 }
 
 /* ---------- Format toolbar ----------
- * We CANNOT use overflow:hidden on the toolbar or its parent — that clips
- * the gear's dropdown menu (which is absolutely positioned but rendered
- * inside the toolbar's DOM tree). The toolbar lives in a fixed-height row
- * already, so we just allow overflow:visible and trust the icon row to fit.
+ * Goals:
+ *   1. Icon buttons are uniformly sized (square) so the row reads as a
+ *      coherent strip, not a jumble of variable rectangles.
+ *   2. Hover background fully contains each icon — no clipping at the top.
+ *   3. The row scrolls horizontally when it doesn't fit (overflow-x:auto)
+ *      while leaving dropdowns free to escape vertically (overflow-y:clip
+ *      with negative-margin scroll-padding so the popups stay visible).
+ *
+ * The gear's popup menu lives inside .button-group#settings (positioned by
+ * Popper). When toolbar overflow-x is on, Popper's `position: absolute`
+ * panel is clipped. We use `overflow-y: visible` on the outer .editor-toolbar
+ * and put `overflow-x: auto` on the inner .button-toolbar; the popup is
+ * elevated via z-index and any vertical clipping is avoided because the
+ * popup expands DOWN and the toolbar's bottom edge is the scroll axis.
+ * For horizontal scroll, we accept that popups too wide for the viewport
+ * will follow the scroll — acceptable since the gear is anchored to its
+ * button which scrolls with it.
  */
 html[data-ba-editor="add"] .editor-toolbar {
   background: var(--ba-panel) !important;
   border-bottom: 1px solid var(--ba-line) !important;
-  padding: 6px 24px !important;
+  padding: 0 !important;
   overflow: visible !important;
   box-shadow: none !important;
 }
 html[data-ba-editor="add"] .button-toolbar.btn-toolbar {
   gap: 2px !important;
-  --buttons-size: 1.55rem !important;
+  --buttons-size: 1.85rem !important;
   --buttons-wrap: nowrap !important;
-  overflow: visible !important;
+  flex-wrap: nowrap !important;
+  overflow-x: auto !important;
+  overflow-y: visible !important;
   align-items: center !important;
+  padding: 6px 24px !important;
+  scrollbar-width: thin;
+  -ms-overflow-style: none;
+}
+html[data-ba-editor="add"] .button-toolbar.btn-toolbar::-webkit-scrollbar {
+  height: 6px;
+}
+html[data-ba-editor="add"] .button-toolbar.btn-toolbar::-webkit-scrollbar-thumb {
+  background: var(--ba-line-strong);
+  border-radius: 3px;
+}
+html[data-ba-editor="add"] .button-toolbar.btn-toolbar::-webkit-scrollbar-thumb:hover {
+  background: var(--ba-ink-faint);
+}
+html[data-ba-editor="add"] .button-toolbar.btn-toolbar::-webkit-scrollbar-track {
+  background: transparent;
 }
 html[data-ba-editor="add"] .button-group,
 html[data-ba-editor="add"] .button-group.btn-group,
@@ -97,25 +128,55 @@ html[data-ba-editor="add"] .dynamically-slottable {
   padding: 0 !important;
   gap: 1px !important;
   box-shadow: none !important;
+  flex-shrink: 0 !important;
 }
 html[data-ba-editor="add"] .dynamically-slottable {
   display: flex !important;
   align-items: center !important;
   flex-wrap: nowrap !important;
 }
-html[data-ba-editor="add"] .icon-button,
+
+/* Every toolbar control is a 30×30 square. Icon SVG is centered at 16px
+   so the hover box always fully encloses the icon — no more "icon hanging
+   out the top of its hover halo". */
+html[data-ba-editor="add"] .icon-button {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 30px !important;
+  height: 30px !important;
+  min-width: 30px !important;
+  min-height: 30px !important;
+  padding: 0 !important;
+  color: var(--ba-ink-dim) !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 6px !important;
+  font-family: var(--ba-sans) !important;
+  flex-shrink: 0 !important;
+  transition: background 120ms ease, color 120ms ease;
+  box-shadow: none !important;
+  line-height: 1 !important;
+}
+/* Label buttons (Fields, Cards, color value, etc.) — sit on the same 30px
+   row baseline as icon buttons but auto-width for their text. */
 html[data-ba-editor="add"] .label-button {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  height: 30px !important;
+  min-height: 30px !important;
+  padding: 0 8px !important;
   color: var(--ba-ink-dim) !important;
   background: transparent !important;
   border: 0 !important;
   border-radius: 6px !important;
   font-family: var(--ba-sans) !important;
   font-size: 10.5pt !important;
-  padding: 5px 7px !important;
-  min-width: 0 !important;
   flex-shrink: 0 !important;
   transition: background 120ms ease, color 120ms ease;
   box-shadow: none !important;
+  line-height: 1 !important;
 }
 html[data-ba-editor="add"] .icon-button:hover,
 html[data-ba-editor="add"] .label-button:hover {
@@ -127,19 +188,54 @@ html[data-ba-editor="add"] .icon-button.active {
   background: color-mix(in srgb, var(--ba-accent) 14%, transparent) !important;
   color: var(--ba-accent) !important;
 }
+/* Uniform SVG size — defeats the original Anki sizing scheme that left
+   superscript/lists/align noticeably smaller than B/I/U. */
 html[data-ba-editor="add"] .icon-button svg,
 html[data-ba-editor="add"] .label-button svg {
   fill: currentColor !important;
-  width: 18px !important;
-  height: 18px !important;
+  width: 16px !important;
+  height: 16px !important;
+  flex-shrink: 0;
 }
-/* "Fields..." / "Cards..." styled as quiet metadata links in sans. */
+/* Chevron-only buttons (the ▾ next to text-color, highlighter, and the
+   format-eraser) read better as adjuncts to their preceding control
+   than as standalone full-size icon buttons. We:
+   - shrink the width (the chevron only needs ~12px),
+   - shrink the SVG (12px),
+   - pull them flush against the preceding button-group-item so they
+     visually read as "the dropdown side of that swatch", not a separate
+     button. The selector uses :has() which the Qt6 WebEngine supports. */
+html[data-ba-editor="add"] .icon-button:has(svg#mdi-chevron-down) {
+  width: 22px !important;
+  min-width: 22px !important;
+  padding: 0 !important;
+}
+html[data-ba-editor="add"] .icon-button:has(svg#mdi-chevron-down) svg {
+  width: 12px !important;
+  height: 12px !important;
+}
+html[data-ba-editor="add"]
+  .button-group-item:has(.icon-button > * svg#mdi-chevron-down) {
+  margin-left: -2px !important;
+}
+/* "Fields" / "Cards" styled as quiet metadata links in sans. The original
+   button text includes a literal "Fields..." / "Cards..."; we hide the
+   ellipsis by clipping the rendered text in a ::after and use the button's
+   text via font-size:0 + ::before for cleaner control. Because the actual
+   button text isn't accessible to a pseudo-element, we instead use a
+   negative letter-spacing trick + ellipsis hiding. Simpler approach: just
+   hide the literal "..." via a sibling node — but easiest is JS-free: use
+   `text-indent` and an explicit `::after` that overlays the cleaned label.
+   Easier: rely on the data-tooltip attribute (Anki sets it) and font-size
+   hack. Cleanest reliable approach is a JS shim that swaps the text at
+   load time — done in addcard.js. CSS here just normalizes the styling. */
 html[data-ba-editor="add"] #notetype .label-button {
   font-style: normal !important;
   font-family: var(--ba-sans) !important;
   color: var(--ba-ink-faint) !important;
   font-size: 10pt !important;
   font-weight: 500 !important;
+  letter-spacing: 0.1px !important;
 }
 html[data-ba-editor="add"] #notetype .label-button:hover {
   color: var(--ba-ink) !important;
@@ -172,6 +268,11 @@ html[data-ba-editor="add"] .fields {
   background: var(--ba-paper) !important;
   padding: 18px 28px 4px 28px !important;
 }
+
+/* Tag section is moved into the field stack via JS (addcard.js
+   `moveTagsIntoFields`) so it sits immediately below BACK without
+   needing to fight Anki's nested flex-grow chain — which collapsed
+   the field-input columns when killed at the top. */
 html[data-ba-editor="add"] .field-container {
   background: transparent !important;
   border: 0 !important;
@@ -270,7 +371,7 @@ html[data-ba-editor="add"] .plain-text-input {
   font-family: var(--ba-serif) !important;
   font-size: 13pt !important;
   line-height: 1.5 !important;
-  color: #1f1d18 !important;
+  color: var(--ba-ink) !important;
   background: transparent !important;
   border: 0 !important;
   outline: none !important;
@@ -294,87 +395,147 @@ html[data-ba-editor="add"] .field-container:not([data-index="0"]):not([data-inde
 }
 
 /* ---------- Tags ----------
- * The Svelte tag editor renders a top "Tags" header (a .collapse-label
- * outside .fields) followed by a .collapsible wrapping a .tag-editor. The
- * native chrome bundles the heading, a chevron, and a tag-icon button into
- * an awkward row. We rebuild it as a single clean line:
+ * Goal: the Tags row reads as another field row — uppercase sans label
+ * above, field-shaped input below — regardless of whether the underlying
+ * Svelte component is "expanded" or "collapsed".
  *
- *      tags  ·  #anatomy  #europe  +
+ * DOM (taken from a live dump):
  *
- * (a quiet italic-serif label, then chips, then a "+" affordance — but
- * still backed by Anki's tag autocomplete since we don't replace the input).
+ *   .fields … (FRONT/BACK field rows, each with its OWN .collapse-label
+ *              titled "Collapse field" — DO NOT touch those)
+ *   <span class="collapse-label" title="Collapse">Tags</span>
+ *   <div class="collapsible"><div class="tag-editor">…</div></div>
+ *
+ * The field labels share the .collapse-label class but their title attribute
+ * is "Collapse field" / "Expand field". The tag label uses title="Collapse"
+ * / "Expand". We scope by title, which is the only stable discriminator.
  */
-/* "Tags" header — match the field labels (small uppercase sans). The
-   collapse-label span contains both a chevron (hidden via .collapse-badge)
-   and the literal text "Tags"; we zero the text via font-size:0 then put
-   "TAGS" in a ::before with explicit size so the casing is consistent. */
-html[data-ba-editor="add"] .collapse-label[title="Collapse"] {
+html[data-ba-editor="add"] .collapse-label[title="Collapse"],
+html[data-ba-editor="add"] .collapse-label[title="Expand"] {
   display: flex !important;
   align-items: center !important;
-  padding: 14px 28px 4px 28px !important;
-  margin: 14px 0 0 0 !important;
+  justify-content: flex-start !important;
+  /* Match the field-row label rhythm exactly. .label-container uses
+     padding: 0 4px 5px 4px (vertical) inside .fields which itself has
+     padding: 18px 28px 4px 28px. So the absolute distance from the
+     row start to the label is 18px + 0 = 18px top, 28px + 4 = 32px left.
+     Replicate that here. */
+  padding: 0 32px 5px 32px !important;
+  margin: 6px 0 0 0 !important;
   font-family: var(--ba-sans) !important;
   font-style: normal !important;
-  font-size: 0 !important;
+  font-size: 0 !important;  /* clear the literal "Tags" text */
   color: var(--ba-ink-faint) !important;
-  border-top: 1px solid var(--ba-line) !important;
+  /* No more border-top divider — the row sits beneath BACK with just
+     spacing so it reads as "another field" instead of a separate
+     bordered section. */
+  border: 0 !important;
   background: var(--ba-paper) !important;
   text-transform: uppercase !important;
   letter-spacing: 1.2px !important;
+  cursor: default !important;
+  pointer-events: none !important;  /* can't be clicked to collapse */
 }
-html[data-ba-editor="add"] .collapse-label[title="Collapse"]::before {
+html[data-ba-editor="add"] .collapse-label[title="Collapse"]::before,
+html[data-ba-editor="add"] .collapse-label[title="Expand"]::before {
   content: "TAGS";
   font-size: 9.5pt;
   font-weight: 600;
+  letter-spacing: 1.2px;
 }
 
-/* Tag editor row. */
+/* Force the tag-editor collapsible region to always render — the Svelte
+   component otherwise sets --height:0 + measuring/hidden classes when
+   collapsed, leaving a naked "TAGS" label. Scoped to .collapsible that has
+   a .tag-editor descendant so we don't affect field collapsibles.
+   ALSO: strip every visual property — Anki's editor.css gives .collapsible
+   a background and a shadow during the "measuring" phase that read as a
+   ghostly outlined box around the tag area (the "weird border" the user
+   kept seeing). Nuke everything to be transparent. */
+html[data-ba-editor="add"] .collapsible:has(.tag-editor),
+html[data-ba-editor="add"] .collapsible:has(.tag-editor).measuring,
+html[data-ba-editor="add"] .collapsible:has(.tag-editor).full-hide,
+html[data-ba-editor="add"] .collapsible:has(.tag-editor).hidden {
+  display: block !important;
+  height: auto !important;
+  max-height: none !important;
+  min-height: 0 !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  overflow: visible !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  outline: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+/* Tag editor row — render exactly like a field input box, aligned to
+   the same 28px left/right gutter as .fields. Strip default chrome so
+   nothing draws a phantom outline. */
+html[data-ba-editor="add"] .tag-editor,
+html[data-ba-editor="add"] .tag-spacer,
+html[data-ba-editor="add"] .tag-editor svelte-css-wrapper {
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
 html[data-ba-editor="add"] .tag-editor {
-  background: var(--ba-paper) !important;
-  padding: 4px 28px 14px 28px !important;
+  padding: 0 28px 18px 28px !important;
+  margin: 0 !important;
   display: flex !important;
   align-items: center !important;
   flex-wrap: wrap !important;
   gap: 6px !important;
 }
 /* Hide the leading "tag-options-button" cluster — that's the tag icon plus
-   the tag-plus button bundled inelegantly. We add a clean "+" via the
-   tag-spacer's surrounding area instead. */
-html[data-ba-editor="add"] .tag-options-button {
+   the tag-plus button bundled inelegantly. Tags are added via typing into
+   the field; no extra icon needed. */
+html[data-ba-editor="add"] .tag-options-button,
+html[data-ba-editor="add"] .tag-add-button {
   display: none !important;
 }
-html[data-ba-editor="add"] .tag-add-button {
-  background: transparent !important;
-  border: 0 !important;
-  padding: 0 !important;
-}
-/* The actual tag-typing area. */
+
+/* The tag-typing field. NO border-box this time — the previous version
+   reused .editor-field's bordered shape, but stacked beneath FRONT and
+   BACK that created three identical boxes in a row + a wrapping section,
+   which read as "borders everywhere". Tags are now a quieter inline row:
+   just a flat surface with the placeholder text aligned to the same
+   gutter as the field contents above. Chips, when present, sit inline.
+   No visible chrome. */
 html[data-ba-editor="add"] .tag-spacer {
   flex: 1;
-  padding: 6px 10px !important;
+  min-height: 28px !important;
+  padding: 4px 0 !important;
   color: var(--ba-ink) !important;
-  font-family: var(--ba-sans) !important;
-  font-size: 11pt !important;
-  background: var(--ba-field) !important;
-  border-radius: var(--ba-radius) !important;
-  border: 1px solid var(--ba-line) !important;
-  min-height: 18px !important;
+  font-family: var(--ba-serif) !important;
+  font-size: 12pt !important;
+  line-height: 1.5 !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  gap: 6px !important;
   position: relative;
+  transition: none !important;
 }
-html[data-ba-editor="add"] .tag-editor:focus-within .tag-spacer {
-  border-color: var(--ba-accent) !important;
-}
-/* Placeholder when no tags. */
-html[data-ba-editor="add"] .tag-editor:not(:focus-within) .tag-spacer::before {
+/* Placeholder shown only when there are no tags AND not focused. Quiet
+   ink-faint so the row doesn't shout when empty. */
+html[data-ba-editor="add"] .tag-editor:not(:focus-within):not(:has(.tag)) .tag-spacer::before {
   content: "Add tags";
-  color: var(--ba-ink-faint) !important;
+  font-family: var(--ba-sans);
+  font-size: 11pt;
+  color: var(--ba-ink-faint);
+  opacity: 0.75;
   pointer-events: none;
 }
-html[data-ba-editor="add"] .tag-editor:focus-within .tag-spacer::before,
-html[data-ba-editor="add"] .tag-editor:has(.tag) .tag-spacer::before {
-  display: none !important;
-}
-/* Tag chips (when tags present). */
+/* Tag chips. */
 html[data-ba-editor="add"] .tag {
   background: color-mix(in srgb, var(--ba-accent) 14%, transparent) !important;
   color: var(--ba-accent) !important;

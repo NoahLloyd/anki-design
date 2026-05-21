@@ -34,12 +34,110 @@
     return true;
   }
 
-  // Try immediately, then a few delayed tries to catch the async editor
-  // ready.
+  // Strip the trailing "…"/"..." from the Fields/Cards label-buttons —
+  // the editorial chrome reads cleaner without the dots. Anki's source
+  // string is "Fields..." / "Cards..." (translated). Both renderings of
+  // the ellipsis (three dots vs ellipsis char) are handled.
+  function cleanFieldsCardsLabels() {
+    var nt = document.getElementById("notetype");
+    if (!nt) return false;
+    var btns = nt.querySelectorAll(".label-button");
+    if (!btns.length) return false;
+    var any = false;
+    btns.forEach(function (b) {
+      // The label text lives in a leaf text node; walk to find it.
+      var walker = document.createTreeWalker(b, NodeFilter.SHOW_TEXT, null);
+      var n;
+      while ((n = walker.nextNode())) {
+        var txt = n.nodeValue;
+        if (!txt) continue;
+        var stripped = txt.replace(/[…]+|\.{2,}/g, "").trim();
+        if (stripped !== txt) {
+          n.nodeValue = stripped;
+          any = true;
+        }
+      }
+    });
+    return any;
+  }
+
+  // Tag editor never collapses — we want the tags input always visible so
+  // the closed-state "horrible bare label" never appears. The header text
+  // is also reset to "TAGS" so it matches the FRONT/BACK field labels.
+  // The field labels and the tag label both use .collapse-label; field
+  // labels carry title="Collapse field" / "Expand field", the tag label
+  // uses bare "Collapse" / "Expand". Scope strictly to the tag label.
+  function keepTagsOpen() {
+    var label = document.querySelector(
+      '.collapse-label[title="Collapse"], .collapse-label[title="Expand"]'
+    );
+    if (!label) return false;
+    if (label.getAttribute("title") === "Expand") {
+      try { label.click(); } catch (_) {}
+    }
+    label.style.pointerEvents = "none";
+    label.style.cursor = "default";
+    return true;
+  }
+
+  // Move the tag section (label + .collapsible/tag-editor) from its
+  // default position OUTSIDE the scroll-area-relative wrapper to INSIDE
+  // the .scroll-content container, right after .fields. This pins TAGS
+  // visually beneath BACK instead of floating at the bottom of the pane
+  // (which is what happens when scroll-area-relative flex-grows to fill).
+  // CSS alone couldn't fix this: killing the outer flex-grow collapsed
+  // the inner field columns; killing only one collapsed the row width.
+  // DOM reparenting sidesteps the whole flex chain.
+  function moveTagsIntoFields() {
+    var scrollContent = document.querySelector(".scroll-content");
+    var tagLabel = document.querySelector(
+      '.collapse-label[title="Collapse"], .collapse-label[title="Expand"]'
+    );
+    if (!scrollContent || !tagLabel) return false;
+    // The .collapsible that wraps the tag-editor is the next element
+    // sibling after the label (or somewhere nearby — find it by checking
+    // each sibling for a descendant .tag-editor).
+    var tagCollapsible = null;
+    var node = tagLabel.nextElementSibling;
+    while (node) {
+      if (node.classList && node.classList.contains("collapsible")
+          && node.querySelector(".tag-editor")) {
+        tagCollapsible = node;
+        break;
+      }
+      node = node.nextElementSibling;
+    }
+    if (!tagCollapsible) return false;
+    // Already moved? Stop polling.
+    if (scrollContent.contains(tagLabel)) return true;
+    scrollContent.appendChild(tagLabel);
+    scrollContent.appendChild(tagCollapsible);
+    return true;
+  }
+
+  function poll(fn, max) {
+    if (fn()) return;
+    var n = 0;
+    var iv = setInterval(function () {
+      n += 1;
+      if (fn() || n > (max || 30)) clearInterval(iv);
+    }, 200);
+  }
+
   reorderToolbar();
-  var attempts = 0;
-  var iv = setInterval(function () {
-    attempts += 1;
-    if (reorderToolbar() || attempts > 30) clearInterval(iv);
-  }, 200);
+  poll(reorderToolbar, 30);
+  poll(cleanFieldsCardsLabels, 30);
+  poll(keepTagsOpen, 30);
+  poll(moveTagsIntoFields, 30);
+
+  // Re-apply whenever the toolbar mutates (Anki re-renders on field focus
+  // change, notetype switch, etc.).
+  try {
+    new MutationObserver(function () {
+      reorderToolbar();
+      cleanFieldsCardsLabels();
+      keepTagsOpen();
+      moveTagsIntoFields();
+    }).observe(document.body, { childList: true, subtree: true });
+  } catch (_) {}
 })();

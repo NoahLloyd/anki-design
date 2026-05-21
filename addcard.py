@@ -34,13 +34,19 @@ from aqt.addcards import AddCards
 from aqt.qt import (
     QApplication,
     QColor,
+    QEasingCurve,
+    QEvent,
     QFrame,
+    QGraphicsDropShadowEffect,
+    QGraphicsOpacityEffect,
     QHBoxLayout,
     QKeySequence,
     QLabel,
     QMenu,
+    QObject,
     QPalette,
     QPoint,
+    QPropertyAnimation,
     QPushButton,
     QShortcut,
     QSize,
@@ -103,6 +109,19 @@ def _resolve_palette() -> Tuple[Dict[str, str], bool]:
 def _qss(p: Dict[str, str], accent: str) -> str:
     """QSS for the Add Card window chrome (everything outside the webview).
     The editor itself is restyled by web/addcard.css."""
+    # The kbd chip inside the Add button shows in INVERSE of the button bg —
+    # in light mode the button is dark ink so the chip uses translucent
+    # white; in dark mode the button is light (ink-in-dark = pale) so the
+    # chip uses translucent dark. Detect by checking which palette we got.
+    is_dark = (p["paper"][1:3] == "0b" or p["paper"][1:3] == "0B")
+    if is_dark:
+        kbd_color = "rgba(31, 29, 24, 0.80)"
+        kbd_bg = "rgba(31, 29, 24, 0.10)"
+        kbd_border = "rgba(31, 29, 24, 0.18)"
+    else:
+        kbd_color = "rgba(255, 255, 255, 0.85)"
+        kbd_bg = "rgba(255, 255, 255, 0.12)"
+        kbd_border = "rgba(255, 255, 255, 0.20)"
     return f"""
 QDialog, QMainWindow, #ba-root, #ba-context, #ba-footer, #ba-fields-wrap {{
     background: {p['paper']};
@@ -151,56 +170,61 @@ QFrame[role="rule"] {{
     background: transparent;
 }}
 
-/* Footer — Recent and other secondary buttons. */
-#ba-footer QPushButton {{
-    background: transparent;
-    color: {p['ink_dim']};
-    border: 1px solid {p['line2']};
-    border-radius: 8px;
-    padding: 8px 14px;
-    font-size: 11pt;
-    font-weight: 500;
-}}
-#ba-footer QPushButton:hover {{
-    color: {p['ink']};
-    background: {p['hover']};
-    border-color: {p['ink_faint']};
-}}
+/* ---------------- Footer ----------------
+ * Single primary action (Add card). Recent was removed — the user never
+ * understood what it was and it never had useful content (history only
+ * populated within a single AddCards session, which the embed creates and
+ * tears down every time). Keeping the footer to one confident action is
+ * cleaner.
+ */
 
-/* Add card primary button — solid dark ink with the shortcut shown inline
-   at low opacity. No animated chip; the chip overlaid the opaque pill and
-   read as broken when it appeared. Compact corner radius (the previous
-   pill shape felt out of place next to the rest of the editorial chrome). */
+/* Add card primary button — shadcn-style: flat, modest radius, no
+ * gradients or pill shape. Just a solid ink rectangle with a hairline
+ * border and a clean sans label. Text color is paper (page bg) so the
+ * inverse fill reads correctly in both light and dark themes.
+ */
 #ba-footer QPushButton#ba-add {{
-    color: white;
+    color: {p['paper']};
     background: {p['ink']};
     border: 1px solid {p['ink']};
-    border-radius: 8px;
-    padding: 10px 18px;
-    font-size: 11.5pt;
-    font-weight: 600;
-    min-height: 22px;
-    min-width: 160px;
+    border-radius: 6px;
+    padding: 8px 18px;
+    font-family: {SANS};
+    font-size: 10.5pt;
+    font-weight: 500;
+    letter-spacing: 0.15px;
+    min-height: 18px;
+    min-width: 110px;
     text-align: center;
-    letter-spacing: 0.2px;
 }}
 #ba-footer QPushButton#ba-add:hover {{
-    background: {accent};
-    color: white;
-    border-color: {accent};
+    background: {p['ink_dim']};
+    border-color: {p['ink_dim']};
 }}
 #ba-footer QPushButton#ba-add:pressed {{
-    padding-top: 11px;
-    padding-bottom: 9px;
+    background: {p['ink_faint']};
+    border-color: {p['ink_faint']};
+}}
+#ba-footer QPushButton#ba-add:focus {{
+    outline: none;
+    border-color: {accent};
 }}
 
-/* Keyboard hint living next to the Add button. Quiet sans, mono-ish. */
-QLabel#ba-add-shortcut {{
-    color: {p['ink_faint']};
-    font-family: ui-monospace, "SF Mono", Menlo, monospace;
-    font-size: 11pt;
-    background: transparent;
-    padding: 0 4px;
+/* The hover-revealed keyboard chip lives INSIDE the button (parent =
+   add_btn). Theme-aware colors: dark chip on light bg, light chip on
+   dark bg. Animation lives on _AddBtnHover (QPropertyAnimation), not
+   in QSS — Qt's stylesheet transitions only cover a small subset of
+   properties. */
+QLabel#ba-add-kbd {{
+    color: {kbd_color};
+    background: {kbd_bg};
+    border: 1px solid {kbd_border};
+    border-radius: 5px;
+    padding: 3px 7px 3px 7px;
+    font-family: {SANS};
+    font-size: 10pt;
+    font-weight: 600;
+    letter-spacing: 0.4px;
 }}
 """
 
@@ -221,6 +245,113 @@ def _hrule(palette: Dict[str, str]) -> QFrame:
     f.setStyleSheet(f"QFrame {{ background: {palette['line']}; }}")
     f.setFixedHeight(1)
     return f
+
+
+class _AddBtnHover(QObject):
+    """Reveals the keyboard-shortcut chip inside the Add card button on
+    hover with a fade + slide-in animation matching the sidebar's CSS
+    transition pattern.
+
+    The chip is a child QLabel parented to the button. On Enter: opacity
+    animates 0→1 and position animates from `rest_x + 6px` → `rest_x`
+    (slide in from the right). On Leave: reverse, fade-out + slide-out.
+    Hidden state is opacity-0 + offset so the geometry stays stable.
+    """
+
+    SLIDE_PX = 6
+    DURATION_MS = 180
+
+    def __init__(self, btn: QPushButton, kbd: QLabel) -> None:
+        super().__init__(btn)
+        self._btn = btn
+        self._kbd = kbd
+
+        # Opacity effect — animatable via QPropertyAnimation("opacity").
+        self._opacity = QGraphicsOpacityEffect(kbd)
+        self._opacity.setOpacity(0.0)
+        kbd.setGraphicsEffect(self._opacity)
+
+        self._opacity_anim = QPropertyAnimation(self._opacity, b"opacity", self)
+        self._opacity_anim.setDuration(self.DURATION_MS)
+        self._opacity_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+        self._pos_anim = QPropertyAnimation(kbd, b"pos", self)
+        self._pos_anim.setDuration(self.DURATION_MS)
+        self._pos_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+        self._reposition(at_rest=False)  # initial: slid-out, invisible
+        btn.installEventFilter(self)
+
+    def _rest_xy(self) -> Tuple[int, int]:
+        self._kbd.adjustSize()
+        bw = self._btn.width()
+        bh = self._btn.height()
+        kw = self._kbd.width()
+        kh = self._kbd.height()
+        # Flush right inside the button with a comfortable inset, vertical
+        # center.
+        x = bw - kw - 12
+        y = (bh - kh) // 2
+        return x, y
+
+    def _reposition(self, at_rest: bool) -> None:
+        try:
+            x, y = self._rest_xy()
+            self._kbd.adjustSize()
+            kw = self._kbd.width()
+            kh = self._kbd.height()
+            if at_rest:
+                self._kbd.setGeometry(x, y, kw, kh)
+            else:
+                # Hidden state: sit slid-out to the right.
+                self._kbd.setGeometry(x + self.SLIDE_PX, y, kw, kh)
+        except Exception:
+            pass
+
+    def _animate_in(self) -> None:
+        try:
+            x, y = self._rest_xy()
+            self._kbd.show()
+            self._kbd.raise_()
+            self._opacity_anim.stop()
+            self._pos_anim.stop()
+            self._opacity_anim.setStartValue(self._opacity.opacity())
+            self._opacity_anim.setEndValue(1.0)
+            self._pos_anim.setStartValue(self._kbd.pos())
+            self._pos_anim.setEndValue(QPoint(x, y))
+            self._opacity_anim.start()
+            self._pos_anim.start()
+        except Exception:
+            pass
+
+    def _animate_out(self) -> None:
+        try:
+            x, y = self._rest_xy()
+            self._opacity_anim.stop()
+            self._pos_anim.stop()
+            self._opacity_anim.setStartValue(self._opacity.opacity())
+            self._opacity_anim.setEndValue(0.0)
+            self._pos_anim.setStartValue(self._kbd.pos())
+            self._pos_anim.setEndValue(QPoint(x + self.SLIDE_PX, y))
+            self._opacity_anim.start()
+            self._pos_anim.start()
+        except Exception:
+            pass
+
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:
+        try:
+            t = event.type()
+            if t == QEvent.Type.Enter:
+                self._animate_in()
+            elif t == QEvent.Type.Leave:
+                self._animate_out()
+            elif t == QEvent.Type.Resize:
+                # Snap to whichever state we're in.
+                at_rest = self._opacity.opacity() > 0.5
+                self._reposition(at_rest=at_rest)
+        except Exception:
+            pass
+        return False
 
 
 # --------------------------------------------------------------------------- #
@@ -412,39 +543,87 @@ def _redress(addcards: AddCards) -> None:
     root_layout.addWidget(fields_wrap, 1)
 
     # --- Footer --- #
-    root_layout.addWidget(_hrule(palette))
+    # No hrule between fields and footer — the dark Add-card pill provides
+    # enough visual weight, and the extra line was part of the "borders
+    # everywhere" complaint.
     footer = QWidget()
     footer.setObjectName("ba-footer")
     fl = QHBoxLayout(footer)
     fl.setContentsMargins(28, 14, 28, 16)
     fl.setSpacing(10)
 
-    recent_btn = QPushButton("Recent  ▾")
-    recent_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-    recent_btn.setToolTip("Re-open a recently added note  (⌘⇧H)")
-    # Add card: clean dark button, just "Add card". The keyboard shortcut
-    # lives in a small dim label to its right (always visible, no animated
-    # chip — the hover chip overlaid the opaque pill which read as broken).
+    # Add card: pill-shaped, dark warm ink with a subtle bevel. The
+    # keyboard-shortcut chip is a child QLabel that hides by default and
+    # reveals on hover (see _AddBtnHover), mirroring the sidebar's
+    # hover-key affordance pattern. Recent was removed: its in-session
+    # history was always empty in our embed flow (each open creates a
+    # fresh AddCards), and the user reported it never appeared to work.
     add_btn = QPushButton("Add card")
     add_btn.setObjectName("ba-add")
     add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
     add_btn.setToolTip("Add card  (⌘↩)")
-    add_shortcut = QLabel("⌘↩")
-    add_shortcut.setObjectName("ba-add-shortcut")
-    add_shortcut.setAlignment(
-        Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
-    )
 
-    # Wire Add to the native add button so all Anki logic / shortcuts /
-    # hooks still fire.
+    kbd = QLabel("⌘↩", add_btn)
+    kbd.setObjectName("ba-add-kbd")
+    kbd.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    addcards._ba_add_hover = _AddBtnHover(add_btn, kbd)  # keep ref alive
+    # NOTE: tried a QGraphicsDropShadowEffect on the button for depth, but
+    # Qt rasterizes the whole button (including children) when applying
+    # the effect, which swallowed the kbd's own QGraphicsOpacityEffect
+    # used by the hover animation. The button bevel (top-light/bottom-
+    # dark border + vertical gradient) provides enough physical feel.
+
+    # Wire Add directly to `addcards.add_current_note`. Important: do NOT
+    # proxy through `addcards.addButton` — Anki's buttonBox sits inside
+    # the old central widget, and our `addcards.setCentralWidget(root)`
+    # call below destroys that old widget and ALL its children, including
+    # the addButton itself. Click forwarded to a freed widget silently
+    # no-ops, which was why the Add button (and the Ctrl+Enter shortcut
+    # bound to addButton.click) appeared dead.
+    # The wrapper:
+    #   - swallows QPushButton.clicked's bool arg (mismatch with self-only
+    #     signature),
+    #   - debounces re-entry: rapid Add card clicks (button OR Ctrl+Enter
+    #     while a prior add is still flushing) trigger a Rust-side
+    #     PoisonError in Anki's backend (mw.col temporarily goes None on
+    #     a worker thread, the db mutex gets left poisoned, the second
+    #     add hits the poisoned mutex and panics). 700ms cooldown covers
+    #     the WebChannel save + add_note bg op round-trip.
+    #   - logs any exception that bubbles out so the next crash gets a
+    #     traceback in run.log instead of Anki's opaque dialog.
+    def _safe_add(*_: Any) -> None:
+        if getattr(addcards, "_ba_add_busy", False):
+            return
+        addcards._ba_add_busy = True  # type: ignore[attr-defined]
+        try:
+            addcards.add_current_note()
+        except Exception:
+            import traceback
+            try:
+                print(
+                    f"[anki-design.addcard] add_current_note failed:\n"
+                    f"{traceback.format_exc()}",
+                    flush=True,
+                )
+            except Exception:
+                pass
+        try:
+            from aqt.qt import QTimer
+            QTimer.singleShot(
+                700,
+                lambda: setattr(addcards, "_ba_add_busy", False),
+            )
+        except Exception:
+            addcards._ba_add_busy = False  # type: ignore[attr-defined]
+
     try:
-        _proxy_click(add_btn, addcards.addButton)
+        add_btn.clicked.connect(_safe_add)
     except Exception:
         pass
+    addcards._ba_safe_add = _safe_add  # type: ignore[attr-defined]
 
-    # Recent: we build our own QMenu anchored to OUR button (the proxied
-    # click on the hidden historyButton would open the menu at its hidden
-    # position). Reuses the same nid -> editHistory logic Anki ships.
+    # Kept for reference but unused now — left here so future change to
+    # restore the Recent affordance can reuse the same QMenu pattern.
     def _show_recent_menu() -> None:
         try:
             from anki.collection import SearchNode
@@ -490,26 +669,39 @@ def _redress(addcards: AddCards) -> None:
                 gui_hooks.add_cards_will_show_history_menu(addcards, m)
             except Exception:
                 pass
-            # Anchor at the bottom-left of our visible Recent button so the
-            # menu drops down from it (not from the hidden native button).
-            pos = recent_btn.mapToGlobal(QPoint(0, recent_btn.height()))
-            m.exec(pos)
+            # Anchor at the bottom-left of the calling button (passed in
+            # via closure if/when this is reused).
+            m.exec(add_btn.mapToGlobal(QPoint(0, add_btn.height())))
         except Exception as e:
             try:
                 from aqt.utils import showWarning
                 showWarning(f"Recent menu failed: {e}")
             except Exception:
                 pass
-    recent_btn.clicked.connect(_show_recent_menu)
+    _ = _show_recent_menu  # keep callable in scope without unused-warning
 
-    fl.addWidget(recent_btn)
     fl.addStretch(1)
-    fl.addWidget(add_shortcut)
-    fl.addSpacing(8)
     fl.addWidget(add_btn)
     root_layout.addWidget(footer)
 
-    # Hide the stock buttonBox (its buttons stay alive for proxying).
+    # CRITICAL: rescue the stock buttons (addButton, historyButton,
+    # closeButton, helpButton) from the central widget BEFORE we replace
+    # it. setCentralWidget(...) deletes the old central widget *and all
+    # its descendants*. Anki's `addHistory()` runs after every successful
+    # add and does `self.historyButton.setEnabled(True)` — if historyButton
+    # is freed C++ memory, the call corrupts the backend's Rust mutex and
+    # the NEXT operation (add, refresh, sync) panics with a PoisonError.
+    # Reparenting them to the AddCards QMainWindow keeps them alive and
+    # invisible (they aren't in any layout).
+    try:
+        for attr in ("addButton", "historyButton", "closeButton",
+                     "helpButton"):
+            w = getattr(addcards, attr, None)
+            if w is not None:
+                w.setParent(addcards)
+                w.hide()
+    except Exception:
+        pass
     try:
         addcards.form.buttonBox.hide()
     except Exception:
@@ -525,19 +717,13 @@ def _redress(addcards: AddCards) -> None:
     except Exception:
         pass
 
-    # Mirror Recent's enabled state from the native history button. Cheap
-    # 800ms tick (native is enabled after the first note is added).
+    # Re-apply chevron labels in case Anki updates the chooser button text
+    # (happens when the user switches notetype or deck). Cheap 800ms tick.
     try:
         from aqt.qt import QTimer
-        recent_btn.setEnabled(addcards.historyButton.isEnabled())
         t = QTimer(addcards)
         t.setInterval(800)
         def _tick() -> None:
-            try:
-                recent_btn.setEnabled(addcards.historyButton.isEnabled())
-            except Exception:
-                pass
-            # Re-apply chevron in case Anki updated the chooser label text.
             _stylize(nt_area, "notetype")
             _stylize(dk_area, "deck")
         t.timeout.connect(_tick)
