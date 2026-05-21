@@ -7,41 +7,70 @@
            <td.stat>      <button>Edit</button>            ← E
            <td#middle>    {show-answer | ease buttons}
            <td.stat>      <button>More ▾<span#time></span></button>  ← M
-   show-answer state injects in #middle:
-     <table><tr><td.stat2><button#ansbut>Show Answer <span.stattxt>{counts}</span></button>
-   ease state injects 2–4 plain <button>s in #middle (one is #defease).
 
-   This stylesheet strips ALL button chrome. The bottom bar reads as quiet
-   typography — a letterspaced "press SPACE" cue for show-answer, and four
-   stat-columns (KEY · LABEL · INTERVAL) for the ease state, matching the
-   numerics language of the homepage hero. */
+   Question state injects in #middle:
+     <table><tr><td.stat2>
+       <button#ansbut>Show Answer <span.stattxt>{counts}</span></button>
+
+   Answer state injects 2–4 plain <button>s in #middle (one is #defease).
+     Anki's templates put the interval inside a child `<small>` (or empty
+     if the deck shows seconds), and the label as the button's textContent.
+
+   We rebuild this surface from scratch as a 3-column flex row:
+       [edit-cluster]   [primary-cluster]   [more-cluster]
+   In the primary cluster:
+     - question: a big "Show Answer" CTA with a keyboard hint chip
+     - answer  : a row of 4 ease "keys" (large key + label + interval),
+                 each color-coded; "Good" is highlighted as default.
+
+   We never touch card content; this is bottom-bar webview only. */
 
 :root {
+  --rf-paper: #f6f3ec;
+  --rf-paper-2: #ece8de;
+  --rf-ink: #1f1d18;
+  --rf-ink-dim: #6a6557;
+  --rf-ink-faint: #a39d8b;
+  --rf-line: rgba(31, 29, 24, 0.10);
+  --rf-line-2: rgba(31, 29, 24, 0.22);
+  --rf-row-hover: rgba(31, 29, 24, 0.05);
+  --rf-accent: #6c8cff;
+  --rf-again: #c95a4b;
+  --rf-hard:  #c69142;
+  --rf-good:  #4a8f6b;
+  --rf-easy:  #3f7fb2;
+  --rf-sans: ui-sans-serif, -apple-system, "SF Pro Text", system-ui, sans-serif;
+  --rf-serif: ui-serif, "New York", "Hoefler Text", "Iowan Old Style", Charter, Georgia, serif;
+}
+:root[data-rf-theme="dark"],
+:root.night-mode {
   --rf-paper: #0b0c0f;
+  --rf-paper-2: #131418;
   --rf-ink: #eceae2;
   --rf-ink-dim: #9b978a;
   --rf-ink-faint: #5d5a51;
   --rf-line: rgba(236, 234, 226, 0.10);
   --rf-line-2: rgba(236, 234, 226, 0.20);
   --rf-row-hover: rgba(236, 234, 226, 0.05);
-  --rf-due: #79b69b;
-  --rf-new: #8bb0e6;
-  --rf-learn: #d7a76c;
-  --rf-sans: ui-sans-serif, -apple-system, "SF Pro Text", system-ui, sans-serif;
-  --rf-serif: ui-serif, "New York", "Hoefler Text", "Iowan Old Style", Charter, Georgia, serif;
+  --rf-again: #e07466;
+  --rf-hard:  #d4a35d;
+  --rf-good:  #79b69b;
+  --rf-easy:  #6fa9d8;
 }
-@media (prefers-color-scheme: light) {
-  :root:not([data-rf-theme="dark"]) {
-    --rf-paper: #f6f3ec;
-    --rf-ink: #1f1d18;
-    --rf-ink-dim: #6a6557;
-    --rf-ink-faint: #a39d8b;
-    --rf-line: rgba(31, 29, 24, 0.10);
-    --rf-line-2: rgba(31, 29, 24, 0.22);
-    --rf-row-hover: rgba(31, 29, 24, 0.04);
-    --rf-due: #2f8462;
-    --rf-new: #2f5fb5;
-    --rf-learn: #a05f1e;
+@media (prefers-color-scheme: dark) {
+  :root:not([data-rf-theme="light"]) {
+    --rf-paper: #0b0c0f;
+    --rf-paper-2: #131418;
+    --rf-ink: #eceae2;
+    --rf-ink-dim: #9b978a;
+    --rf-ink-faint: #5d5a51;
+    --rf-line: rgba(236, 234, 226, 0.10);
+    --rf-line-2: rgba(236, 234, 226, 0.20);
+    --rf-row-hover: rgba(236, 234, 226, 0.05);
+    --rf-again: #e07466;
+    --rf-hard:  #d4a35d;
+    --rf-good:  #79b69b;
+    --rf-easy:  #6fa9d8;
   }
 }
 
@@ -53,49 +82,66 @@ html, body {
   padding: 0 !important;
 }
 
-/* Outer / table layout */
+/* Outer container — a slim row. The center carries either the keyboard
+   prompt (question state) or the ease shortcuts (answer state). Edit
+   and More are consolidated into one right-side cluster. */
 #outer {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
   width: 100%;
-  padding: 18px 26px 22px !important;
+  padding: 12px 22px 14px !important;
   box-sizing: border-box;
+  gap: 14px;
 }
-#innertable {
-  border: 0 !important;
-  background: transparent !important;
-  border-collapse: collapse !important;
-  border-spacing: 0 !important;
-  width: 100% !important;
+
+/* Anki gives us a single-row table — make it disappear into flex.
+   We want Edit and More side-by-side on the right (the user wants them
+   "next to each other"), so we reorder via flex order. */
+#innertable,
+#innertable tbody,
+#innertable tr {
+  display: contents !important;
 }
 #innertable td {
-  border: 0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  vertical-align: middle !important;
   padding: 0 !important;
-  vertical-align: middle !important;
+  border: 0 !important;
 }
-#innertable td.stat {
-  width: 1%;
-  white-space: nowrap;
-  vertical-align: middle !important;
+/* Edit is the first .stat cell, More is the last. Place both on the
+   right side with Edit just before More. */
+#innertable td.stat:first-of-type { order: 3; }
+#innertable td.stat:last-of-type  { order: 4; }
+#middle { order: 2; flex: 1 1 auto; justify-content: center !important; }
+/* A spacer on the left mirrors the right cluster's width so the middle
+   stays optically centered. */
+#outer::before {
+  content: "";
+  order: 1;
+  flex: 0 0 96px;  /* roughly matches Edit + More width */
 }
-#middle {
-  text-align: center;
+/* The ease state nests `#middle > center > table > tbody > tr > td > button`.
+   Flatten everything to display: contents so the buttons live on the same
+   flex line. The td.stat2 special-case (show-answer single-cell wrapper)
+   needs to remain a flex item, so we re-set it after. */
+#middle center,
+#middle table,
+#middle tbody,
+#middle tr,
+#middle td {
+  display: contents !important;
 }
-#middle table {
-  margin: 0 auto !important;
-  border-collapse: collapse !important;
-  width: auto !important;
-}
-#middle table td { padding: 0 !important; }
-/* Only the ease-state tds get the counter; the show-answer state wraps its
-   button in a td.stat2 which we exclude. */
-#middle table tr td:not(.stat2) { counter-increment: ba-ease; }
+#middle td.stat2 { display: inline-flex !important; }
 
-/* Reset: kill all the default button chrome — we use pure typography. */
+/* Reset all native button chrome — we draw our own. */
 button {
   -webkit-appearance: none !important;
   appearance: none !important;
   background: transparent !important;
   border: 0 !important;
-  border-radius: 8px !important;
+  border-radius: 10px !important;
   padding: 8px 12px !important;
   margin: 0 !important;
   color: var(--rf-ink-dim) !important;
@@ -104,120 +150,197 @@ button {
   cursor: pointer !important;
   box-shadow: none !important;
   outline: none !important;
-  transition: color 160ms ease, background 160ms ease !important;
-}
-button:hover {
-  color: var(--rf-ink) !important;
-  background: var(--rf-row-hover) !important;
+  transition: color 160ms ease, background 160ms ease, transform 80ms ease !important;
 }
 button:active { transform: translateY(1px) !important; }
 
-/* Edit / More — quietly tucked in the corners */
+/* Edit + More — icon-only, fixed-dimension hit targets, side-by-side on
+   the right. Hover changes opacity only; no background swap (which felt
+   like a "popping" hover before). Anki's button text is hidden via
+   font-size: 0 on the parent. */
 button[onclick*="'edit'"],
 button[onclick*="'more'"] {
-  font: 500 10.5px/1 var(--rf-sans) !important;
-  letter-spacing: 0.14em !important;
-  text-transform: uppercase !important;
+  width: 28px !important;
+  height: 28px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border-radius: 7px !important;
+  background: transparent !important;
   color: var(--rf-ink-faint) !important;
-  padding: 8px 10px !important;
+  font-size: 0 !important;  /* hide Anki's label text */
+  opacity: 0.55;
+  transition: color 160ms ease, opacity 160ms ease;
 }
 button[onclick*="'edit'"]:hover,
-button[onclick*="'more'"]:hover { color: var(--rf-ink-dim) !important; }
-.stattxt {
-  color: var(--rf-ink-faint) !important;
-  font-variant-numeric: tabular-nums;
+button[onclick*="'more'"]:hover {
+  color: var(--rf-ink) !important;
+  opacity: 1;
+  background: transparent !important;
+}
+button[onclick*="'edit'"]::before {
+  content: "";
+  width: 16px;
+  height: 16px;
+  display: inline-block;
+  background-color: currentColor;
+  -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M12 20h9'/><path d='M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4Z'/></svg>") no-repeat center / contain;
+          mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M12 20h9'/><path d='M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4Z'/></svg>") no-repeat center / contain;
 }
 
-/* ===== SHOW ANSWER — pure typography, no button =====
-   Stack: a letterspaced label + the colored count summary below. */
-#outer button#ansbut,
-button#ansbut {
-  display: inline-flex !important;
-  flex-direction: column !important;
-  align-items: center !important;
-  gap: 7px !important;
-  padding: 10px 18px !important;
-  background: transparent !important;
-  color: var(--rf-ink) !important;
-  font: 600 13px/1 var(--rf-sans) !important;
-  text-transform: uppercase !important;
-  letter-spacing: 0.32em !important;
-  border-radius: 10px !important;
+button[onclick*="'more'"]::before {
+  content: "";
+  width: 16px;
+  height: 16px;
+  display: inline-block;
+  background-color: currentColor;
+  -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='5' cy='12' r='1.6'/><circle cx='12' cy='12' r='1.6'/><circle cx='19' cy='12' r='1.6'/></svg>") no-repeat center / contain;
+          mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='5' cy='12' r='1.6'/><circle cx='12' cy='12' r='1.6'/><circle cx='19' cy='12' r='1.6'/></svg>") no-repeat center / contain;
 }
-button#ansbut:hover { color: var(--rf-accent, #6c8cff) !important; background: transparent !important; }
-button#ansbut .stattxt {
-  display: block;
+button[onclick*="'more'"] #time { display: none !important; }
+
+/* ===== QUESTION STATE — Show Answer =====
+   No big button. Replace the label with a single quiet line:
+   "Press space · or click the card".
+   The original button is still clickable (Anki keys "Space" off this
+   button's onclick) but we shrink it so it disappears into a typographic
+   prompt, not a CTA. */
+#ansbut {
+  display: inline-flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 8px !important;
+  padding: 6px 12px !important;
+  border-radius: 8px !important;
+  background: transparent !important;
+  border: 0 !important;
+  color: var(--rf-ink-faint) !important;
   font: 500 11.5px/1 var(--rf-sans) !important;
   letter-spacing: 0 !important;
   text-transform: none !important;
-  color: var(--rf-ink-faint) !important;
-  margin: 0 !important;
+  font-size: 0 !important;  /* hide Anki's "Show Answer" text */
+  opacity: 0.7;
+  transition: opacity 160ms ease, color 160ms ease;
 }
-button#ansbut .new-count   { color: var(--rf-new)   !important; font-weight: 600; }
-button#ansbut .learn-count { color: var(--rf-learn) !important; font-weight: 600; }
-button#ansbut .review-count{ color: var(--rf-due)   !important; font-weight: 600; }
-button#ansbut u { text-decoration: none; font-weight: 700; color: var(--rf-ink) !important; }
+#ansbut::before {
+  content: "Press";
+  font-size: 11.5px;
+  letter-spacing: 0;
+  color: var(--rf-ink-faint);
+}
+#ansbut::after {
+  content: "Space";
+  display: inline-flex;
+  align-items: center;
+  font: 500 10.5px/1 var(--rf-sans);
+  letter-spacing: 0.04em;
+  padding: 4px 8px 3px;
+  border-radius: 5px;
+  background: transparent;
+  border: 1px solid var(--rf-line-2);
+  color: var(--rf-ink-dim);
+}
+#ansbut:hover { opacity: 1; color: var(--rf-ink) !important; background: transparent !important; }
+#ansbut .stattxt { display: none !important; }
 
-/* ===== EASE BUTTONS — four stat columns =====
-   Each <button> becomes: KEY NUMBER (big) · LABEL (uppercase) · INTERVAL (dim).
-   The key counter (1/2/3/4) is injected with CSS counter-increment so it
-   shows the user's keyboard shortcut, not the label.
+/* The counts under SHOW ANSWER are redundant — the header in the main
+   webview already carries the new/learn/due breakdown + the position. */
+#ansbut .stattxt { display: none !important; }
 
-   Hover: subtle background tint + key in accent.
-   Default ease (#defease, usually Good): key is in accent by default. */
-#middle table { counter-reset: ba-ease 0; }
-#outer #middle table tr td button,
-#middle table tr td button {
-  display: inline-flex !important;
-  flex-direction: column !important;
-  align-items: center !important;
-  gap: 8px !important;
-  min-width: 90px !important;
-  padding: 12px 14px !important;
+/* ===== ANSWER STATE — ease keys =====
+   No labels (AGAIN/HARD/GOOD/EASY), no big blocks. Each ease button is a
+   small inline "key · interval" pair, color-coded. The default (Good)
+   has slightly higher weight.
+
+   Counter-reset goes on #outer (always rendered) since #middle's
+   descendants are flattened with `display: contents` and CSS counters
+   don't reliably increment on contents'd elements in WebKit. The
+   show-answer state has a single ansbut button which would also
+   increment the counter to 1 — that's fine, it's unused there. */
+#outer { counter-reset: ba-ease 0; }
+#middle button[data-ease] { counter-increment: ba-ease; }
+#middle table { border-spacing: 0 !important; }
+/* Inline-block button. The button's font-size is 0 (to hide the "Again"
+   text node Anki injects); ::before and .nobold each declare their own
+   font + line-height, and vertical-align: middle on the children keeps
+   them aligned against the button's explicit 24px line-height baseline. */
+#middle table tr td:not(.stat2) button {
+  display: inline-block !important;
+  text-align: center !important;
+  padding: 4px 10px !important;
+  margin: 0 4px !important;
   background: transparent !important;
+  border: 0 !important;
+  border-radius: 6px !important;
   color: var(--rf-ink-dim) !important;
-  font: 600 10px/1 var(--rf-sans) !important;
-  letter-spacing: 0.18em !important;
-  text-transform: uppercase !important;
-  border-radius: 10px !important;
-  margin: 0 6px !important;
+  font: 500 0/24px var(--rf-sans) !important;  /* font-size 0 hides Anki's label */
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  white-space: nowrap !important;
   position: relative;
+  --ba-key: var(--rf-ink-faint);
+  opacity: 0.85;
+  transition: opacity 160ms ease;
+  vertical-align: middle !important;
 }
-/* Inject the key number above the label — only for ease buttons (non-stat2) */
+/* The colored key square — inline-block, vertically aligned with the
+   interval text after it. */
 #middle table tr td:not(.stat2) button::before {
   content: counter(ba-ease);
-  display: block;
-  font: 500 26px/1 var(--rf-sans);
+  display: inline-block;
+  vertical-align: middle;
+  width: 20px;
+  height: 20px;
+  margin-right: 8px;
+  border-radius: 5px;
+  font: 700 13px/20px var(--rf-sans);
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.025em;
-  color: var(--rf-ink);
-  text-transform: none;
-  margin-bottom: 2px;
+  text-align: center;
+  color: var(--rf-paper);
+  background: var(--ba-key);
 }
-#middle table tr td button:hover {
-  background: var(--rf-row-hover) !important;
-  color: var(--rf-ink) !important;
-}
-#middle table tr td button:hover::before {
-  color: var(--rf-accent, #6c8cff);
-}
-/* Real Anki uses .nobold inside ease buttons for the interval; .stattxt
-   on the show-answer button for the count summary. Style both. */
-#middle table tr td button .nobold,
-#middle table tr td button .stattxt {
-  display: block;
-  font: 500 10px/1 var(--rf-sans) !important;
+/* Color each ease key by its data-ease attribute — robust against
+   DOM structure changes (and works through `display: contents`).
+   We match the long selector's specificity above so these wins. */
+#middle table tr td:not(.stat2) button[data-ease="1"] { --ba-key: var(--rf-again); }
+#middle table tr td:not(.stat2) button[data-ease="2"] { --ba-key: var(--rf-hard); }
+#middle table tr td:not(.stat2) button[data-ease="3"] { --ba-key: var(--rf-good); }
+#middle table tr td:not(.stat2) button[data-ease="4"] { --ba-key: var(--rf-easy); }
+
+/* Interval label sits next to the key, color-matched, quiet.
+   Anki's stock reviewer-bottom.css positions .nobold absolutely above the
+   button (`top: -3px; transform: translate(-50%, -100%)`) — we override
+   to static flow so it sits inline next to the colored key. */
+#middle table tr td:not(.stat2) button .nobold,
+#middle table tr td:not(.stat2) button .stattxt,
+#middle table tr td:not(.stat2) button small {
+  position: static !important;
+  transform: none !important;
+  top: auto !important;
+  left: auto !important;
+  display: inline-block !important;
+  vertical-align: middle !important;
+  font: 500 12px/18px var(--rf-sans) !important;
   font-weight: 500 !important;
-  letter-spacing: 0.04em !important;
+  letter-spacing: 0 !important;
   text-transform: none !important;
-  color: var(--rf-ink-faint) !important;
+  color: var(--ba-key) !important;
+  opacity: 0.95;
   margin: 0 !important;
+  padding: 0 !important;
+  font-variant-numeric: tabular-nums;
 }
 
-/* Default ease — the key number is accent, signaling Enter would pick it. */
-#outer #middle button#defease,
-button#defease { color: var(--rf-ink) !important; }
-#outer #middle button#defease::before,
-button#defease::before { color: var(--rf-accent, #6c8cff); }
-#outer #middle button#defease:hover,
-button#defease:hover { background: var(--rf-row-hover) !important; }
+#middle table tr td:not(.stat2) button:hover { opacity: 1; background: transparent !important; }
+
+/* Default ease (Good) — the only one that gets extra weight. A quiet
+   ↵ follows the interval, signaling Enter triggers it. */
+#middle table tr td:not(.stat2) button#defease { opacity: 1; }
+#middle table tr td:not(.stat2) button#defease::before { box-shadow: 0 0 0 3px color-mix(in oklab, var(--rf-good) 12%, transparent); }
+#middle table tr td:not(.stat2) button#defease .nobold,
+#middle table tr td:not(.stat2) button#defease small,
+#middle table tr td:not(.stat2) button#defease .stattxt { font-weight: 600 !important; }
