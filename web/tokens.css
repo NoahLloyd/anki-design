@@ -1,34 +1,104 @@
 /* BetterAnki — design tokens.
-   Anki 25.09 colors every built-in component (deck browser, toolbar, bottom
+   Anki 25.x colors every built-in component (deck browser, toolbar, bottom
    bars, overview, reviewer chrome) through these CSS custom properties.
    Overriding them here recolors Anki's own UI coherently instead of fighting
-   individual selectors. --rf-accent is injected from config in <head>. */
+   individual selectors.
 
-:root,
-.night-mode,
-body {
-  --canvas: #0e1014 !important;
-  --canvas-elevated: #181b22 !important;
-  --canvas-inset: #14171d !important;
-  --canvas-overlay: #181b22 !important;
-  --canvas-glass: rgba(20, 23, 29, 0.72) !important;
+   We respect system appearance:
+     • dark = default
+     • @media (prefers-color-scheme: light) flips the palette
+     • :root[data-rf-theme="light|dark"] (settings override) wins
 
-  --fg: #eef1f6 !important;
-  --fg-subtle: #aeb4c0 !important;
-  --fg-faint: #6b7280 !important;
-  --fg-disabled: #4b5563 !important;
+   --rf-accent is injected from config in the page <head>. */
 
-  --border: #2b313c !important;
-  --border-subtle: #232831 !important;
+/* All variables live on :root only — declaring them on `body` too would let
+   body's own value win over an attribute override on :root in light mode. */
+
+/* ---------------------------- DARK (default) ---------------------------- */
+:root {
+  --canvas: #0b0c0f !important;
+  --canvas-elevated: #14161b !important;
+  --canvas-inset: #0d0e12 !important;
+  --canvas-overlay: #16181f !important;
+  --canvas-glass: rgba(20, 22, 28, 0.72) !important;
+
+  --fg: #eceae2 !important;
+  --fg-subtle: #9b978a !important;
+  --fg-faint: #5d5a51 !important;
+  --fg-disabled: #45433d !important;
+
+  --border: #2a2d36 !important;
+  --border-subtle: #1d2027 !important;
   --border-radius-medium: 14px !important;
 
   --accent: var(--rf-accent, #6c8cff) !important;
   --link: var(--rf-accent, #6c8cff) !important;
 
-  --state-new: #5aa9ff !important;
-  --state-learn: #ff9e57 !important;
-  --state-review: #4fd08a !important;
+  --state-new: #8bb0e6 !important;
+  --state-learn: #d7a76c !important;
+  --state-review: #79b69b !important;
 
+  --shadow: rgba(0, 0, 0, 0.45) !important;
+}
+
+/* ---------------------------- LIGHT (system) ---------------------------- */
+@media (prefers-color-scheme: light) {
+  :root:not([data-rf-theme="dark"]) {
+    --canvas: #f6f3ec !important;
+    --canvas-elevated: #fbf9f3 !important;
+    --canvas-inset: #f1eee6 !important;
+    --canvas-overlay: #ffffff !important;
+    --canvas-glass: rgba(255, 252, 244, 0.72) !important;
+
+    --fg: #1f1d18 !important;
+    --fg-subtle: #6a6557 !important;
+    --fg-faint: #a39d8b !important;
+    --fg-disabled: #c8c2b3 !important;
+
+    --border: #d8d2c2 !important;
+    --border-subtle: #e6e1d0 !important;
+
+    --state-new: #2f5fb5 !important;
+    --state-learn: #a05f1e !important;
+    --state-review: #2f8462 !important;
+
+    --shadow: rgba(40, 36, 28, 0.18) !important;
+  }
+}
+
+/* --------------------------- explicit overrides -------------------------- */
+:root[data-rf-theme="light"] {
+  --canvas: #f6f3ec !important;
+  --canvas-elevated: #fbf9f3 !important;
+  --canvas-inset: #f1eee6 !important;
+  --canvas-overlay: #ffffff !important;
+  --canvas-glass: rgba(255, 252, 244, 0.72) !important;
+  --fg: #1f1d18 !important;
+  --fg-subtle: #6a6557 !important;
+  --fg-faint: #a39d8b !important;
+  --fg-disabled: #c8c2b3 !important;
+  --border: #d8d2c2 !important;
+  --border-subtle: #e6e1d0 !important;
+  --state-new: #2f5fb5 !important;
+  --state-learn: #a05f1e !important;
+  --state-review: #2f8462 !important;
+  --shadow: rgba(40, 36, 28, 0.18) !important;
+}
+:root[data-rf-theme="dark"] {
+  --canvas: #0b0c0f !important;
+  --canvas-elevated: #14161b !important;
+  --canvas-inset: #0d0e12 !important;
+  --canvas-overlay: #16181f !important;
+  --canvas-glass: rgba(20, 22, 28, 0.72) !important;
+  --fg: #eceae2 !important;
+  --fg-subtle: #9b978a !important;
+  --fg-faint: #5d5a51 !important;
+  --fg-disabled: #45433d !important;
+  --border: #2a2d36 !important;
+  --border-subtle: #1d2027 !important;
+  --state-new: #8bb0e6 !important;
+  --state-learn: #d7a76c !important;
+  --state-review: #79b69b !important;
   --shadow: rgba(0, 0, 0, 0.45) !important;
 }
 

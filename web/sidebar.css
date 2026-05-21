@@ -1,0 +1,247 @@
+/* BetterAnki — left sidebar.
+   Vertical layered structure: wordmark · totals · nav · quick · (stretch) ·
+   streak block · footer. Sections separated by subtle rules + breathing
+   space. Standing data is bootstrapped from window.__baStandingData and
+   refreshed via window.__baSetStanding(). */
+
+body.ba-with-side {
+  padding-left: var(--rf-side-w, 264px);
+  box-sizing: border-box;
+}
+
+.ba-side {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: var(--rf-side-w, 264px);
+  background: var(--rf-paper);
+  border-right: 1px solid var(--rf-line);
+  display: flex;
+  flex-direction: column;
+  padding: 24px 18px 16px;
+  z-index: 50;
+  font-family: var(--rf-sans);
+  color: var(--rf-ink);
+  -webkit-user-select: none;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.ba-side, .ba-side * {
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+/* Shared rule for between-section breaks. */
+.ba-side-head,
+.ba-side-totals,
+.ba-side-nav,
+.ba-side-quick {
+  border-bottom: 1px solid var(--rf-line);
+  padding-bottom: 16px;
+  margin-bottom: 16px;
+}
+
+/* ---------------------------- WORDMARK ---------------------------- */
+.ba-side-head {
+  padding: 0 4px 18px;
+}
+.ba-side-mark {
+  font: 500 18px/1 var(--rf-serif);
+  letter-spacing: -0.005em;
+  color: var(--rf-ink);
+}
+
+/* ---------------------------- CROSS-DECK TOTALS ---------------------------- */
+/* Hidden in single-deck mode (hero owns the numbers). */
+.ba-side-totals {
+  margin: 0 0 16px 0;
+  padding: 4px 6px 16px;
+  display: grid;
+  gap: 9px;
+}
+.ba-side-totals .ba-side-stat {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.ba-side-totals dt {
+  font: 600 10.5px/1 var(--rf-sans);
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--rf-ink-faint);
+  margin: 0;
+}
+.ba-side-totals dd {
+  margin: 0;
+  font: 600 16px/1 var(--rf-sans);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1, "lnum" 1;
+  color: var(--rf-ink);
+}
+.ba-side-stat--due dd   { color: var(--rf-due); }
+.ba-side-stat--new dd   { color: var(--rf-new); }
+.ba-side-stat--learn dd { color: var(--rf-learn); }
+.ba-side.ba-side--single .ba-side-totals {
+  display: none;
+}
+
+/* ---------------------------- NAV / QUICK ---------------------------- */
+.ba-side-nav,
+.ba-side-quick,
+.ba-side-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;             /* slightly more breathing room between rows */
+}
+.ba-side-foot {
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid var(--rf-line);
+}
+
+.ba-side-item {
+  -webkit-appearance: none;
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  padding: 10px 12px;        /* more vertical space per item */
+  text-align: left;
+  font: 500 12.5px/1 var(--rf-sans);
+  letter-spacing: 0.005em;
+  color: var(--rf-ink-dim);
+  cursor: pointer;
+  transition: background 200ms ease, color 200ms ease;
+  position: relative;
+}
+.ba-side-item .ba-side-l { flex: 1; }
+.ba-side-icon {
+  flex: none;
+  width: 14px; height: 14px;
+  color: var(--rf-ink-faint);
+  transition: color 200ms ease;
+}
+/* Hover changes ONLY the background — nothing else moves. No text-color
+   change, no icon-color change, no font-weight, no transform. The bg fade
+   alone signals interactivity without any optical weight shift. */
+.ba-side-item:hover {
+  background: var(--rf-row-hover);
+}
+
+.ba-side-item[data-active="true"] {
+  color: var(--rf-ink);
+  background: var(--rf-row-current);
+}
+.ba-side-item[data-active="true"] .ba-side-icon { color: var(--rf-ink); }
+.ba-side-item[data-active="true"]::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 8px; bottom: 8px;
+  width: 2px; border-radius: 2px;
+  background: var(--rf-accent, #6c8cff);
+}
+
+/* Quick actions — slightly lighter weight to read as actions. */
+.ba-side-act {
+  font-size: 12px !important;
+  color: var(--rf-ink-faint) !important;
+}
+.ba-side-act:hover {
+  background: var(--rf-row-hover) !important;
+  color: var(--rf-ink-dim) !important;
+}
+
+/* Streak block + lifetime stats moved out of the sidebar; styles deleted. */
+
+/* ---------------------------- SYNC ---------------------------- */
+.ba-side-item[data-cmd="sync"] .ba-side-dot {
+  width: 6px; height: 6px; border-radius: 999px;
+  background: var(--rf-ink-faint);
+  opacity: 0;
+  transition: opacity 160ms ease, background 160ms ease,
+              transform 160ms ease;
+}
+/* "Pending" (changes to push) — small accent dot */
+.ba-side-item[data-cmd="sync"].ba-sync-pending { color: var(--rf-accent, #6c8cff); }
+.ba-side-item[data-cmd="sync"].ba-sync-pending .ba-side-icon { color: var(--rf-accent, #6c8cff); }
+.ba-side-item[data-cmd="sync"].ba-sync-pending .ba-side-dot {
+  opacity: 1;
+  background: var(--rf-accent, #6c8cff);
+}
+/* "Full" — warning amber */
+.ba-side-item[data-cmd="sync"].ba-sync-full { color: var(--rf-learn); }
+.ba-side-item[data-cmd="sync"].ba-sync-full  .ba-side-icon { color: var(--rf-learn); }
+.ba-side-item[data-cmd="sync"].ba-sync-full  .ba-side-dot {
+  opacity: 1;
+  background: var(--rf-learn);
+}
+/* Active sync — gentle pulse */
+.ba-side-item[data-cmd="sync"].ba-sync-active .ba-side-icon {
+  animation: ba-spin 1.4s linear infinite;
+}
+@keyframes ba-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* Hover-reveal keyboard chip (absolutely positioned, no layout shift). */
+.ba-side-key {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%) translateX(6px);
+  opacity: 0;
+  pointer-events: none;
+  font: 600 9.5px/1 var(--rf-sans);
+  letter-spacing: 0.06em;
+  color: var(--rf-ink-dim);
+  background: var(--rf-row-current);
+  border: 1px solid var(--rf-line);
+  border-radius: 5px;
+  padding: 3px 6px;
+  text-transform: uppercase;
+  min-width: 18px;
+  text-align: center;
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+.ba-side-item:hover .ba-side-key {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0);
+}
+
+/* ---------------------------- FLOATING COG ---------------------------- */
+.ba-cog {
+  position: fixed;
+  top: 12px;
+  right: 14px;
+  z-index: 200;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  border: 1px solid var(--rf-line);
+  background: var(--rf-panel);
+  color: var(--rf-ink-dim);
+  font: 400 15px/1 var(--rf-sans);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.55;
+  transition: opacity 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+.ba-cog:hover {
+  opacity: 1;
+  color: var(--rf-ink);
+  border-color: var(--rf-line-2);
+}
+body.ba-with-side .ba-cog { display: none; }
+
+/* .ba-back styling lives in reviewer.css — it's only used on the reviewer
+   webview, and that's where the relevant base context (paper, ink, line)
+   is set up. */
