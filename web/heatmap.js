@@ -1,4 +1,4 @@
-/* BetterAnki — heatmap behavior: open on the newest activity (scrolled fully
+/* Anki Design — heatmap behavior: open on the newest activity (scrolled fully
    right, so the latest days are never cropped), and an instant custom tooltip
    in place of the slow native `title`. Pure progressive enhancement: if this
    never runs the grid is still a valid static heatmap. */
@@ -8,7 +8,7 @@
   var TIP_ID = "rf-hm-tip";
   // Per-scroll-element guard; survives deck-browser re-renders (new node = new
   // init) without rebinding the same element twice.
-  var seen = (window.__betterankiHM = window.__betterankiHM || new WeakSet());
+  var seen = (window.__ankiDesignHM = window.__ankiDesignHM || new WeakSet());
 
   function tipEl() {
     var t = document.getElementById(TIP_ID);

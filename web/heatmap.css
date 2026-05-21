@@ -1,4 +1,4 @@
-/* BetterAnki — contribution-style review heatmap (deck browser). */
+/* Anki Design — contribution-style review heatmap (deck browser). */
 
 .rf-heatmap {
   margin: 28px auto 8px;
@@ -46,18 +46,26 @@
   min-width: 0;
   overflow-x: auto;
   overflow-y: hidden;
-  padding-bottom: 2px;
   scroll-behavior: smooth;
-  scrollbar-width: none;             /* hidden by default */
-  scrollbar-color: var(--rf-border, #3a4150) transparent;
+  /* Gutter is reserved at all times (thin in Firefox, 6px in webkit) so
+     the thumb appearing on hover never adds height — the only thing that
+     changes between states is the thumb color. */
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  transition: scrollbar-color 160ms ease;
 }
-.rf-hm-scroll::-webkit-scrollbar { height: 0; width: 0; }
-.rf-hm-scroll:hover { scrollbar-width: thin; }
-.rf-hm-scroll:hover::-webkit-scrollbar { height: 6px; }
+.rf-hm-scroll::-webkit-scrollbar { height: 5px; width: 5px; }
 .rf-hm-scroll::-webkit-scrollbar-track { background: transparent; }
 .rf-hm-scroll::-webkit-scrollbar-thumb {
-  background: var(--rf-border, #3a4150);
+  background: transparent;
   border-radius: 4px;
+  transition: background 160ms ease;
+}
+.rf-hm-scroll:hover {
+  scrollbar-color: var(--rf-border, #3a4150) transparent;
+}
+.rf-hm-scroll:hover::-webkit-scrollbar-thumb {
+  background: var(--rf-border, #3a4150);
 }
 .rf-hm-scroll::-webkit-scrollbar-thumb:hover {
   background: var(--rf-text-dim, #5a6172);
@@ -103,17 +111,6 @@
   z-index: 1;
   box-shadow: 0 0 0 1.5px var(--rf-text, #e6e8ee);
 }
-
-.rf-hm-foot {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  justify-content: flex-end;
-  margin-top: 12px;
-  font-size: 11px;
-  color: var(--rf-text-dim, #9aa0ad);
-}
-.rf-hm-foot .rf-hm-cell { width: 10px; height: 10px; }
 
 /* custom instant tooltip (replaces the slow native title) */
 .rf-hm-tip {

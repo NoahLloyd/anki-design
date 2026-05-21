@@ -1,4 +1,4 @@
-/* BetterAnki — deck homepage + global palette.
+/* Anki Design — deck homepage + global palette.
 
    Loads on the deck browser AND the Overview. The heavy homepage layout is
    scoped to `.ba-home` (a class the add-on adds to the deck browser's
@@ -131,7 +131,7 @@
 }
 
 /* Heatmap palette — set as CSS variables so the user's "heatmap_palette"
-   setting in BetterAnki preferences can override these via a higher-
+   setting in Anki Design preferences can override these via a higher-
    specificity injection. heatmap.css consumes the vars; we just provide
    defaults appropriate to the active theme. */
 @media (prefers-color-scheme: light) {

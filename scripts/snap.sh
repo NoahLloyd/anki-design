@@ -4,7 +4,7 @@
 # Usage:
 #   scripts/snap.sh <out.png> <title-substring|"main"> [--open-addcards] [--fill-sample]
 #
-# Writes a JSON request into .context/screenshot-requests/; the BetterAnki
+# Writes a JSON request into .context/screenshot-requests/; the Anki Design
 # dev-watch thread picks it up, grabs the matching top-level widget on the
 # Qt main thread, saves the PNG, then deletes the request file.
 set -euo pipefail

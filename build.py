@@ -5,7 +5,7 @@ An .ankiaddon is a zip of the add-on's files *at the root* (so __init__.py is
 at the top level, not inside a folder). AnkiWeb supplies its own manifest, but
 keeping name/conflicts in manifest.json is harmless and useful offline.
 
-Usage:  python3 build.py   ->   dist/betteranki.ankiaddon
+Usage:  python3 build.py   ->   dist/anki-design.ankiaddon
 """
 
 import fnmatch
@@ -14,10 +14,10 @@ import zipfile
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 OUT_DIR = os.path.join(ROOT, "dist")
-OUT = os.path.join(OUT_DIR, "betteranki.ankiaddon")
+OUT = os.path.join(OUT_DIR, "anki-design.ankiaddon")
 
 # Anything matching these (path-relative-to-root) is never shipped.
-EXCLUDE_DIRS = {".git", "dist", "__pycache__", "scripts"}
+EXCLUDE_DIRS = {".git", "dist", "__pycache__", "scripts", ".context"}
 EXCLUDE_FILES = {
     "meta.json",
     ".DS_Store",

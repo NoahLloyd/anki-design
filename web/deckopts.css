@@ -1,0 +1,88 @@
+/* Anki Design — custom deck-options menu.
+
+   Triggered by the gear button next to a deck name. Replaces Anki's
+   native QMenu (which doesn't match the rest of the chrome) with a
+   small floating panel anchored to the gear. Pure HTML/CSS, no JS
+   framework — see web/deckopts.js for behavior. */
+
+.ad-menu {
+  position: absolute;
+  z-index: 1000;
+  min-width: 184px;
+  padding: 6px;
+  background: var(--rf-paper, #faf7f0);
+  border: 1px solid var(--rf-line, #e3decf);
+  border-radius: 10px;
+  box-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.04),
+    0 8px 24px -8px rgba(0, 0, 0, 0.18),
+    0 16px 40px -16px rgba(0, 0, 0, 0.12);
+  font-family: var(--rf-sans, "Inter", sans-serif);
+  color: var(--rf-ink, #1a1a1a);
+  -webkit-user-select: none;
+  user-select: none;
+  /* Open animation — fade + small downward translate. */
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+.ad-menu.ad-menu--open {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.ad-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  padding: 8px 10px;
+  text-align: left;
+  font: 500 13px/1.2 inherit;
+  letter-spacing: 0.005em;
+  color: var(--rf-ink, #1a1a1a);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+.ad-menu-item:hover,
+.ad-menu-item:focus-visible {
+  background: var(--rf-row-hover, rgba(0, 0, 0, 0.04));
+  outline: none;
+}
+.ad-menu-item .ad-menu-icon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--rf-ink-faint, #8b8576);
+  transition: color 120ms ease;
+}
+.ad-menu-item:hover .ad-menu-icon,
+.ad-menu-item:focus-visible .ad-menu-icon {
+  color: var(--rf-ink-dim, #4a4538);
+}
+.ad-menu-item .ad-menu-l {
+  flex: 1;
+}
+
+.ad-menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--rf-line, #e3decf);
+}
+
+/* Destructive items — quieter at rest, take on a warning tint on hover. */
+.ad-menu-item.ad-menu-danger {
+  color: var(--rf-ink-dim, #4a4538);
+}
+.ad-menu-item.ad-menu-danger:hover,
+.ad-menu-item.ad-menu-danger:focus-visible {
+  background: rgba(200, 68, 49, 0.08);
+  color: #c84431;
+}
+.ad-menu-item.ad-menu-danger:hover .ad-menu-icon,
+.ad-menu-item.ad-menu-danger:focus-visible .ad-menu-icon {
+  color: #c84431;
+}
