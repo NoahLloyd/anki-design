@@ -1365,8 +1365,9 @@ gui_hooks.webview_did_receive_js_message.append(_on_js_message)
 #   - Plain `,` → settings:  Anki has no binding for `,` at all, so add a
 #     QShortcut for it.
 def _setup_sidebar_shortcuts() -> None:
-    # Patch onAddCard so the A key (and Tools menu, and toolbar) all open
-    # the inline embed.
+    # Patch onAddCard so the Tools menu, toolbar, and any code path that
+    # goes through `mw.onAddCard()` opens the inline embed instead of the
+    # standalone window.
     try:
         _orig_on_add_card = mw.onAddCard
 
@@ -1378,6 +1379,40 @@ def _setup_sidebar_shortcuts() -> None:
                 _orig_on_add_card(*args, **kwargs)
 
         mw.onAddCard = _patched_on_add_card  # type: ignore[assignment]
+    except Exception:
+        pass
+
+    # The "A" global shortcut is bound by aqt/main.py:setupKeys via
+    # `("a", self.onAddCard)` — a bound-method reference captured BEFORE
+    # we monkey-patch `mw.onAddCard`. The QShortcut holds the original
+    # bound method, so the monkey-patch above doesn't catch it. Find the
+    # QShortcut child of mw whose key is "A", disconnect its existing
+    # activation, and reconnect to our embed opener.
+    try:
+        from aqt.qt import QShortcut, QKeySequence
+        target_seq = QKeySequence("a")
+
+        def _open_inline_a() -> None:
+            try:
+                from . import addcard_embed
+                addcard_embed.open_inline(mw)
+            except Exception:
+                try:
+                    from aqt import dialogs
+                    dialogs.open("AddCards", mw)
+                except Exception:
+                    pass
+
+        for sc in mw.findChildren(QShortcut):
+            try:
+                if sc.key().toString() == target_seq.toString():
+                    try:
+                        sc.activated.disconnect()
+                    except Exception:
+                        pass
+                    sc.activated.connect(_open_inline_a)
+            except Exception:
+                continue
     except Exception:
         pass
 
@@ -1553,6 +1588,24 @@ def _dev_reload_views() -> None:
         bottom = getattr(rv, "bottom", None)
         if bottom is not None and getattr(bottom, "web", None) is not None:
             views.append(bottom.web)
+    # Bust the AddCards editor webview too (covers both the standalone
+    # AddCards window and our inline embed — both hold a live editor.web
+    # that loads addcard.css/addcard.js from /_addons).
+    try:
+        from aqt import dialogs
+        ac = dialogs._dialogs.get("AddCards", [None, None])[1]
+        if ac is None:
+            try:
+                from . import addcard_embed
+                ac = addcard_embed._state.get("addcards")
+            except Exception:
+                ac = None
+        if ac is not None and getattr(ac, "editor", None):
+            w = getattr(ac.editor, "web", None)
+            if w is not None:
+                views.append(w)
+    except Exception:
+        pass
     for w in views:
         try:
             w.eval(bust)
@@ -1619,6 +1672,136 @@ def _dev_screenshot(request_path: str) -> None:
         except Exception:
             pass
 
+        close_after = bool(req.get("close_after"))
+        test_add = bool(req.get("test_add"))
+        if test_add:
+            # End-to-end smoke test: fill the editor, click Add, count
+            # before/after, write the result to <out>.txt next to the PNG.
+            from aqt.qt import QTimer as _TT
+
+            def _smoke() -> None:
+                # Simulate two consecutive adds to reproduce the user's
+                # "second click crashes" report. Between clicks Anki
+                # re-loads a fresh note; if our flow left dangling state
+                # the second add should crash.
+                log = []
+                try:
+                    from . import addcard_embed
+                    ac = addcard_embed._state.get("addcards")
+                    if ac is None:
+                        return
+                    col = ac.col
+                    before = col.note_count()
+
+                    def fill_and_click(tag: str) -> None:
+                        ed = ac.editor
+                        if ed and ed.note:
+                            ed.note.fields[0] = f"front-{tag}"
+                            if len(ed.note.fields) > 1:
+                                ed.note.fields[1] = f"back-{tag}"
+                            try:
+                                ed.loadNote()
+                            except Exception as e:
+                                log.append(f"loadNote-{tag}={e}")
+                        try:
+                            from aqt.qt import QPushButton as _QPB
+                            overlay = addcard_embed._state.get("overlay")
+                            if overlay is not None:
+                                for child in overlay.findChildren(_QPB):
+                                    if child.objectName() == "ba-add":
+                                        child.click()
+                                        log.append(f"clicked-{tag}=ok")
+                                        return
+                            log.append(f"no_btn-{tag}")
+                        except Exception as e:
+                            import traceback
+                            log.append(f"click-{tag}-err={e}")
+                            try:
+                                print(
+                                    f"[smoke] click-{tag} failed:\n"
+                                    f"{traceback.format_exc()}",
+                                    flush=True,
+                                )
+                            except Exception:
+                                pass
+
+                    def _verify() -> None:
+                        try:
+                            after = col.note_count()
+                            with open(out + ".txt", "w") as fh:
+                                fh.write(
+                                    f"before={before} after={after} "
+                                    f"delta={after - before} "
+                                    + " ".join(log) + "\n"
+                                )
+                        except Exception:
+                            pass
+
+                    fill_and_click("A")
+                    # Wait LONGER than _safe_add's 700ms debounce before
+                    # the second click — should be safe now.
+                    _TT.singleShot(1200, lambda: fill_and_click("B"))
+                    _TT.singleShot(2700, _verify)
+                except Exception as e:
+                    log.append(f"smoke_err={e}")
+            _TT.singleShot(1200, _smoke)
+        hover_add = bool(req.get("hover_add"))
+        if hover_add:
+            # Schedule on a short timer so it runs AFTER the embed has been
+            # opened and the layout settled.
+            from aqt.qt import QTimer as _QT
+
+            def _hover_add() -> None:
+                # Directly trigger the animated reveal — easier than
+                # synthesizing a QEnterEvent that reliably reaches the
+                # filter through Qt's offscreen-grab path. We give the
+                # animation 250ms to finish before the grab happens.
+                try:
+                    from . import addcard_embed
+                    from aqt.qt import QApplication, QTimer as _T2
+                    ac = addcard_embed._state.get("addcards")
+                    if ac is None:
+                        return
+                    hover = getattr(ac, "_ba_add_hover", None)
+                    if hover is None:
+                        return
+                    hover._animate_in()
+                    QApplication.processEvents()
+                    # Force a paint pass after the animation completes
+                    # so the next grab() captures the fully-faded-in state.
+                    def _post() -> None:
+                        try:
+                            QApplication.processEvents()
+                        except Exception:
+                            pass
+                    _T2.singleShot(250, _post)
+                except Exception:
+                    pass
+            # Fire the hover early so the 180ms animation has time to
+            # complete before the 2000ms grab.
+            _QT.singleShot(1000, _hover_add)
+        mw_width = req.get("mw_width")
+        if isinstance(mw_width, int) and mw_width > 200:
+            try:
+                mw.resize(mw_width, mw.height())
+                QApplication.processEvents()
+            except Exception:
+                pass
+        trigger_shortcut = req.get("trigger_shortcut")  # e.g. "a"
+        if trigger_shortcut:
+            try:
+                from aqt.qt import QShortcut, QKeySequence
+                seq = QKeySequence(trigger_shortcut).toString()
+                for sc in mw.findChildren(QShortcut):
+                    try:
+                        if sc.key().toString() == seq:
+                            sc.activated.emit()
+                            break
+                    except Exception:
+                        continue
+            except Exception:
+                pass
+
         def _grab() -> None:
             widget = None
             if target_title in ("main", "mw"):
@@ -1657,6 +1840,12 @@ def _dev_screenshot(request_path: str) -> None:
                         fh.write(f"grab failed: {e}\n")
                 except Exception:
                     pass
+            if close_after:
+                try:
+                    from . import addcard_embed
+                    addcard_embed.close_inline()
+                except Exception:
+                    pass
 
         # Optionally inject sample text into editor fields so we can preview
         # the design with content. We schedule this *before* the grab delay.
@@ -1664,6 +1853,12 @@ def _dev_screenshot(request_path: str) -> None:
             try:
                 from aqt import dialogs
                 ac = dialogs._dialogs.get("AddCards", [None, None])[1]
+                if ac is None:
+                    try:
+                        from . import addcard_embed
+                        ac = addcard_embed._state.get("addcards")
+                    except Exception:
+                        ac = None
                 if ac is None or not getattr(ac, "editor", None):
                     return
                 ed = ac.editor
@@ -1752,19 +1947,41 @@ def _dev_dump(request_path: str) -> None:
         pass
     out = req.get("out")
     target_title = (req.get("title") or "").lower()
+    target_kind = (req.get("kind") or "").lower()
     if not out:
         return
     try:
         from aqt.qt import QApplication
-        widget = None
+        from aqt import dialogs
+        try:
+            from aqt.qt import QWebEngineView  # type: ignore
+        except Exception:
+            from PyQt6.QtWebEngineWidgets import QWebEngineView  # type: ignore
         web = None
-        if target_title in ("main", "mw"):
+        widget = None
+        # 1) Specific kind: the AddCards editor (in our inline embed the
+        # editor lives inside mw, so the topLevelWidgets lookup misses it
+        # — find via the dialogs registry or the embed's stash).
+        if target_kind == "addcards-editor":
+            ac = dialogs._dialogs.get("AddCards", [None, None])[1]
+            if ac is None:
+                try:
+                    from . import addcard_embed
+                    ac = addcard_embed._state.get("addcards")
+                except Exception:
+                    ac = None
+            if ac is not None and getattr(ac, "editor", None):
+                web = ac.editor.web
+        # 2) `main`/`mw`: pin to mw.web. mw has multiple QWebEngineViews
+        # (toolbarWeb, web, bottomWeb); findChild() returns the first one
+        # constructed (usually the toolbar) which gives a useless 1-line
+        # DOM.
+        if web is None and target_title in ("main", "mw"):
             widget = mw
-            # mw has multiple QWebEngineViews (toolbarWeb, web, bottomWeb).
-            # findChild() returns whichever was constructed first — usually
-            # the toolbar — which gives a useless 1-line DOM. Pin to mw.web.
             web = getattr(mw, "web", None)
-        else:
+        # 3) Fall back to a top-level window matching `target_title`, then
+        # pick the first QWebEngineView under it.
+        if web is None:
             for w in QApplication.topLevelWidgets():
                 try:
                     if not w.isVisible():
@@ -1775,15 +1992,10 @@ def _dev_dump(request_path: str) -> None:
                         break
                 except Exception:
                     continue
-        if widget is None:
-            with open(out, "w") as fh:
-                fh.write(f"<!-- no widget for title={target_title!r} -->")
-            return
-        try:
-            from aqt.qt import QWebEngineView  # type: ignore
-        except Exception:
-            from PyQt6.QtWebEngineWidgets import QWebEngineView  # type: ignore
-        if web is None:
+            if widget is None:
+                with open(out, "w") as fh:
+                    fh.write(f"<!-- no widget for title={target_title!r} -->")
+                return
             web = widget.findChild(QWebEngineView)
         if web is None:
             with open(out, "w") as fh:
