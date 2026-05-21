@@ -232,7 +232,7 @@ body::before {
   }
 }
 
-/* order: hero (single-deck) or deck list (multi) → practice section */
+/* order: hero (single-deck) or deck list → practice section (stats + heatmap) */
 .ba-home .ba-hero { order: 0; }
 .ba-home > table { order: 1; }
 .ba-home .ba-practice { order: 2; }
@@ -371,82 +371,12 @@ body::before {
 .ba-home tr.deck:hover img.gears { opacity: 0.45; }
 .ba-home td.opts a:hover img.gears { opacity: 0.95; }
 
-/* ---------------- PRACTICE — streak + stats + heatmap as ONE band ---------------- */
+/* ---------------- PRACTICE — heatmap-only section below the decks --------- */
 .ba-practice {
-  order: 2;
   width: 100%;
   max-width: var(--rf-measure);
   margin: 36px auto 0;
 }
-.ba-practice-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 24px;
-  padding: 0 4px;
-  margin-bottom: 20px;
-  flex-wrap: wrap;
-}
-/* Streak — a fire-icon pill so it reads as its own little badge. */
-.ba-practice-streak {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 13px 6px 10px;
-  background: rgba(108, 140, 255, 0.10);
-  background: color-mix(in srgb, var(--rf-accent, #6c8cff) 11%, transparent);
-  border: 1px solid rgba(108, 140, 255, 0.28);
-  border-color: color-mix(in srgb, var(--rf-accent, #6c8cff) 32%, transparent);
-  border-radius: 999px;
-  line-height: 1;
-}
-.ba-flame {
-  width: 13px;
-  height: 14px;
-  color: var(--rf-accent, #6c8cff);
-  flex: none;
-  transform: translateY(-0.5px);
-}
-.ba-practice-streak-n {
-  font: 600 15px/1 var(--rf-sans);
-  font-variant-numeric: tabular-nums;
-  font-feature-settings: "tnum" 1, "lnum" 1;
-  letter-spacing: -0.01em;
-  color: var(--rf-accent, #6c8cff);
-}
-.ba-practice-streak-l {
-  font: 500 11px/1 var(--rf-sans);
-  letter-spacing: 0.04em;
-  color: var(--rf-ink-dim);
-}
-.ba-practice-meta {
-  display: flex;
-  align-items: baseline;
-  gap: 22px;
-  flex-wrap: wrap;
-}
-@media (max-width: 720px) {
-  .ba-practice-head { gap: 12px; }
-  .ba-practice-meta { gap: 14px; }
-}
-.ba-practice-stat {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
-}
-.ba-practice-stat .n {
-  font: 600 14px/1 var(--rf-sans);
-  font-variant-numeric: tabular-nums;
-  font-feature-settings: "tnum" 1, "lnum" 1;
-  color: var(--rf-ink);
-}
-.ba-practice-stat .l {
-  font: 500 10.5px/1 var(--rf-sans);
-  text-transform: uppercase;
-  letter-spacing: 0.16em;
-  color: var(--rf-ink-faint);
-}
-
 /* Heatmap inside the practice section — no panel chrome, just the grid. */
 .ba-home .ba-practice .rf-heatmap {
   background: transparent !important;
@@ -464,7 +394,7 @@ body::before {
   color: var(--rf-ink-faint);
 }
 
-/* Anki's "Studied N cards today" caption — folded into the practice header. */
+/* Anki's "Studied N cards today" caption — hide; superfluous next to deck list. */
 .ba-home #studiedToday { display: none !important; }
 
 /* ============================ SINGLE-DECK HERO ============================ */
