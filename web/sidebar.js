@@ -50,6 +50,84 @@
     return b;
   }
 
+  // Morphing "New deck" row. Idle: looks like any sidebar action row. Active:
+  // the label swaps for an inline input — Enter creates, Esc/blur cancels.
+  // The icon column anchors the transition so nothing jumps. We hold the open
+  // state on the wrapper element and toggle a single `data-state` so all
+  // transitions are CSS-driven.
+  function makeNewDeckRow() {
+    var row = document.createElement("div");
+    row.className = "ba-side-item ba-side-act ba-side-newdeck";
+    row.setAttribute("data-cmd", "create");
+    row.setAttribute("data-state", "idle");
+    // Label + input share a single flex slot so they overlap in place;
+    // CSS fades one in as the other fades out — no layout shift.
+    row.innerHTML =
+      iconSVG("create") +
+      '<span class="ba-side-newdeck-swap">' +
+        '<span class="ba-side-newdeck-label">New deck</span>' +
+        '<input type="text" class="ba-side-newdeck-input" autocomplete="off" ' +
+          'spellcheck="false" placeholder="Name a deck…" tabindex="-1" />' +
+      '</span>';
+
+    var input = row.querySelector(".ba-side-newdeck-input");
+
+    function open() {
+      if (row.getAttribute("data-state") === "active") { input.focus(); return; }
+      row.setAttribute("data-state", "active");
+      input.removeAttribute("tabindex");
+      // Defer focus one frame so the layout swap finishes before the caret
+      // is placed — otherwise the input can scroll its parent.
+      requestAnimationFrame(function () { input.focus(); });
+    }
+    function close() {
+      row.setAttribute("data-state", "idle");
+      input.setAttribute("tabindex", "-1");
+      input.value = "";
+    }
+    function submit() {
+      var name = input.value.trim();
+      if (!name) { close(); return; }
+      send("create:" + name);
+      // The Python handler calls mw.reset(); the deck list will refresh.
+      close();
+    }
+
+    // Click on the row (outside the input) opens it.
+    row.addEventListener("click", function (e) {
+      if (row.getAttribute("data-state") === "active") return;
+      e.preventDefault();
+      open();
+    });
+    // Keyboard activation when the row itself is focused (idle state).
+    row.tabIndex = 0;
+    row.addEventListener("keydown", function (e) {
+      if (row.getAttribute("data-state") === "idle" &&
+          (e.key === "Enter" || e.key === " ")) {
+        e.preventDefault();
+        open();
+      }
+    });
+
+    input.addEventListener("click", function (e) { e.stopPropagation(); });
+    input.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { e.preventDefault(); submit(); }
+      else if (e.key === "Escape") { e.preventDefault(); close(); }
+    });
+    input.addEventListener("blur", function () {
+      // Defer so other in-flight handlers (e.g. our own submit) run first.
+      setTimeout(function () {
+        if (document.activeElement !== input) close();
+      }, 80);
+    });
+
+    // Public hook used by the Python handler when "ba:create" comes from a
+    // keyboard shortcut or external trigger.
+    window.__baFocusNewDeck = open;
+
+    return row;
+  }
+
   function build() {
     var aside = document.createElement("aside");
     aside.className = "ba-side";
@@ -112,10 +190,8 @@
     // Quick actions
     var quick = document.createElement("div");
     quick.className = "ba-side-quick";
-    [
-      { cmd: "create", label: "New deck",    cls: "ba-side-act" },
-      { cmd: "import", label: "Import file", cls: "ba-side-act" },
-    ].forEach(function (it) { quick.appendChild(makeRow(it)); });
+    quick.appendChild(makeNewDeckRow());
+    quick.appendChild(makeRow({ cmd: "import", label: "Import file", cls: "ba-side-act" }));
     aside.appendChild(quick);
 
     // Streak + lifetime stats moved out of the sidebar and into the
