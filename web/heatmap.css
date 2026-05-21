@@ -91,11 +91,11 @@
 .rf-hm-col .rf-hm-cell:last-child { margin-bottom: 0; }
 .rf-hm-empty { background: transparent; }
 
-.rf-hm-l0 { background: #20242e; }
-.rf-hm-l1 { background: #1f3d5c; }
-.rf-hm-l2 { background: #2f6aa8; }
-.rf-hm-l3 { background: #4f9ae0; }
-.rf-hm-l4 { background: #7fc4ff; }
+.rf-hm-l0 { background: var(--rf-hm-l0, #20242e); }
+.rf-hm-l1 { background: var(--rf-hm-l1, #1f3d5c); }
+.rf-hm-l2 { background: var(--rf-hm-l2, #2f6aa8); }
+.rf-hm-l3 { background: var(--rf-hm-l3, #4f9ae0); }
+.rf-hm-l4 { background: var(--rf-hm-l4, #7fc4ff); }
 
 .rf-hm-col .rf-hm-cell:not(.rf-hm-empty) { cursor: pointer; }
 .rf-hm-col .rf-hm-cell:not(.rf-hm-empty):hover {

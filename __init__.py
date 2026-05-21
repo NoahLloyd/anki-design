@@ -54,6 +54,76 @@ def _config() -> Dict[str, Any]:
     return mw.addonManager.getConfig(__name__) or {}
 
 
+# Fixed-palette heatmaps. Four shades, low intensity → high.
+# Dark-mode set: eyeballed against the near-black canvas (#0b0c0f).
+# Light-mode set: eyeballed against the cream canvas (#f6f3ec) — the
+# dark sets render as harsh blobs in light mode, so each palette gets
+# its own light ramp running from pale-tinted to saturated.
+_HEATMAP_DARK: Dict[str, list] = {
+    "green":  ["#0e4429", "#006d32", "#26a641", "#39d353"],
+    "teal":   ["#0c4747", "#0d7d76", "#14b8a6", "#5eead4"],
+    "violet": ["#3b1670", "#6b2da3", "#9656ce", "#c896ec"],
+    "rose":   ["#5c1024", "#8c1338", "#cf2553", "#f43f5e"],
+    "amber":  ["#5a3a06", "#a87212", "#e09524", "#f7c149"],
+}
+_HEATMAP_LIGHT: Dict[str, list] = {
+    "green":  ["#cdebd4", "#84d18b", "#3aa552", "#1a6c2e"],
+    "teal":   ["#cdebe7", "#86d3c8", "#22a89a", "#0e6b62"],
+    "violet": ["#e5ddf6", "#bba6e2", "#7c52d6", "#3f1f8a"],
+    "rose":   ["#fbd9df", "#f29eaa", "#dc3a59", "#7a1230"],
+    "amber":  ["#fde6b6", "#f1c46c", "#cf8418", "#7a4708"],
+}
+
+
+def _shades_from_accent(accent: str, bg: tuple) -> list:
+    """Blend the accent toward a background color at four ratios.
+    Level 4 is the full accent; lower levels are progressively desaturated
+    toward the canvas tint."""
+    try:
+        r = int(accent[1:3], 16)
+        g = int(accent[3:5], 16)
+        b = int(accent[5:7], 16)
+    except Exception:
+        r, g, b = 108, 140, 255  # default accent
+    out = []
+    for ratio in (0.22, 0.45, 0.72, 1.0):
+        nr = int(bg[0] + (r - bg[0]) * ratio)
+        ng = int(bg[1] + (g - bg[1]) * ratio)
+        nb = int(bg[2] + (b - bg[2]) * ratio)
+        out.append(f"#{nr:02x}{ng:02x}{nb:02x}")
+    return out
+
+
+def _heatmap_palette_decl(choice: str, accent: str) -> str:
+    """CSS rule block (not a single declaration list) that paints the
+    heatmap cells per palette + theme. Emits two rule blocks — one for
+    each of dark and light — plus a @media block so the heatmap follows
+    the OS appearance when the theme is set to "system"."""
+    if choice in _HEATMAP_DARK:
+        dark = _HEATMAP_DARK[choice]
+        light = _HEATMAP_LIGHT[choice]
+    else:
+        dark = _shades_from_accent(accent, bg=(12, 14, 22))
+        light = _shades_from_accent(accent, bg=(246, 243, 236))
+    d1, d2, d3, d4 = dark
+    l1, l2, l3, l4 = light
+    # The !important wins over theme.css's per-theme defaults. We emit a
+    # CSS rule block here (separate from the page's main injection) so the
+    # selectors can target dark/light themes independently.
+    return (
+        f":root,:root[data-rf-theme=\"dark\"]"
+        f"{{--rf-hm-l1:{d1}!important;--rf-hm-l2:{d2}!important;"
+        f"--rf-hm-l3:{d3}!important;--rf-hm-l4:{d4}!important;}}"
+        f":root[data-rf-theme=\"light\"]"
+        f"{{--rf-hm-l1:{l1}!important;--rf-hm-l2:{l2}!important;"
+        f"--rf-hm-l3:{l3}!important;--rf-hm-l4:{l4}!important;}}"
+        f"@media (prefers-color-scheme:light)"
+        f"{{:root:not([data-rf-theme=\"dark\"])"
+        f"{{--rf-hm-l1:{l1}!important;--rf-hm-l2:{l2}!important;"
+        f"--rf-hm-l3:{l3}!important;--rf-hm-l4:{l4}!important;}}}}"
+    )
+
+
 def _is(context: Any, cls: Any) -> bool:
     return bool(cls) and isinstance(context, cls)
 
@@ -73,6 +143,10 @@ def on_webview_will_set_content(web_content: WebContent, context: Optional[Any])
     cfg = _config()
     accent = cfg.get("accent", "#6c8cff")
     theme_pref = cfg.get("theme", "system")  # "system" | "light" | "dark"
+    density = cfg.get("density", "comfortable")
+    palette_choice = cfg.get("heatmap_palette", "accent")
+    card_width_choice = cfg.get("reviewer_card_width", "medium")
+    font_size_choice = cfg.get("reviewer_font_size", "medium")
     # User-supplied display fonts are prepended to the existing stacks.
     serif_user = (cfg.get("font_serif") or "").strip()
     sans_user = (cfg.get("font_sans") or "").strip()
@@ -80,17 +154,37 @@ def on_webview_will_set_content(web_content: WebContent, context: Optional[Any])
         if serif_user else ""
     sans_decl = f"--rf-sans:{sans_user}, ui-sans-serif, -apple-system, system-ui, sans-serif;" \
         if sans_user else ""
+
+    # Reviewer geometry — variables surface in reviewer.css.
+    width_map = {"narrow": "640px", "medium": "780px", "wide": "920px",
+                 "full": "100%"}
+    fontsize_map = {"small": "16px", "medium": "19px", "large": "22px",
+                    "x-large": "26px"}
+    card_width = width_map.get(card_width_choice, "780px")
+    card_font_size = fontsize_map.get(font_size_choice, "19px")
+    reviewer_decl = (
+        f"--rf-card-max-width:{card_width};"
+        f"--rf-card-font-size:{card_font_size};"
+    )
+
+    # Heatmap palette — emits its own rule block (light + dark variants),
+    # so its rules can stand outside the single-rule injection below.
+    hm_rules = _heatmap_palette_decl(palette_choice, accent)
+
     # tokens.css derives --accent from --rf-accent; inject the latter here.
     # `data-rf-theme` on <html> forces light/dark over the system @media.
-    extras = ""
+    # `data-rf-density` lets theme.css tighten or loosen spacing.
+    extras = "<script>(function(){var d=document.documentElement;"
     if theme_pref in ("light", "dark"):
-        extras = (
-            f"<script>document.documentElement.dataset.rfTheme="
-            f"'{theme_pref}';</script>"
-        )
+        extras += f"d.dataset.rfTheme='{theme_pref}';"
+    extras += f"d.dataset.rfDensity='{density}';"
+    extras += "})();</script>"
+
     web_content.head += (
         f"<style>:root,.night-mode,body{{"
-        f"--rf-accent:{accent};{serif_decl}{sans_decl}}}</style>"
+        f"--rf-accent:{accent};"
+        f"{serif_decl}{sans_decl}{reviewer_decl}"
+        f"}}{hm_rules}</style>"
         + extras
     )
     web_content.css.append(f"{WEB}/tokens.css")
@@ -622,7 +716,9 @@ def _start_studying(did: int) -> None:
 def _practice_header_html() -> str:
     """Streak + today/minutes/all-time as a header band above the heatmap.
     These stats used to live in the sidebar; they fit better here next to
-    the visual record of activity."""
+    the visual record of activity. The streak block is suppressed when
+    ``show_streak`` is False so users who don't track streaks aren't
+    pressured by a count they don't care about."""
     try:
         s = _standing()
     except Exception:
@@ -631,26 +727,30 @@ def _practice_header_html() -> str:
     today_n = int(s.get("today", 0) or 0)
     today_min = _minutes_today()
     total = int(s.get("total", 0) or 0)
-    # Phosphor-inspired flame: tall body + a small inner highlight that
-    # reads as the cool core of the fire.
-    flame = (
-        '<svg class="ba-flame" viewBox="0 0 24 24" '
-        'fill="currentColor" aria-hidden="true">'
-        '<path d="M12 2c.5 3 2 4.5 3.5 6.2C17 10 18.5 12 18.5 14.5'
-        '  c0 3.6-2.9 6.5-6.5 6.5s-6.5-2.9-6.5-6.5c0-1.6.6-2.9 1.5-3.8'
-        '  C8 11.6 9 12 10 12c0-2 0-4.5 2-10z"/>'
-        '<path d="M12.5 17.5c-1.4 0-2.5-1.1-2.5-2.5c0-.9.4-1.6 1.2-2'
-        '  c.7-.4 1.6-.8 1.9-1.7c.5 1 1.3 1.7 1.6 2.6c.1.4.2.8.2 1.2'
-        '  c0 1.4-1.1 2.4-2.4 2.4z" opacity=".55"/>'
-        '</svg>'
-    )
+    streak_html = ""
+    if _config().get("show_streak", True):
+        # Phosphor-inspired flame: tall body + a small inner highlight that
+        # reads as the cool core of the fire.
+        flame = (
+            '<svg class="ba-flame" viewBox="0 0 24 24" '
+            'fill="currentColor" aria-hidden="true">'
+            '<path d="M12 2c.5 3 2 4.5 3.5 6.2C17 10 18.5 12 18.5 14.5'
+            '  c0 3.6-2.9 6.5-6.5 6.5s-6.5-2.9-6.5-6.5c0-1.6.6-2.9 1.5-3.8'
+            '  C8 11.6 9 12 10 12c0-2 0-4.5 2-10z"/>'
+            '<path d="M12.5 17.5c-1.4 0-2.5-1.1-2.5-2.5c0-.9.4-1.6 1.2-2'
+            '  c.7-.4 1.6-.8 1.9-1.7c.5 1 1.3 1.7 1.6 2.6c.1.4.2.8.2 1.2'
+            '  c0 1.4-1.1 2.4-2.4 2.4z" opacity=".55"/>'
+            '</svg>'
+        )
+        streak_html = f"""
+        <div class="ba-practice-streak" title="Consecutive days reviewed">
+            {flame}
+            <span class="ba-practice-streak-n">{streak}</span>
+            <span class="ba-practice-streak-l">day streak</span>
+        </div>"""
     return f"""
     <header class="ba-practice-head">
-      <div class="ba-practice-streak" title="Consecutive days reviewed">
-        {flame}
-        <span class="ba-practice-streak-n">{streak}</span>
-        <span class="ba-practice-streak-l">day streak</span>
-      </div>
+      {streak_html}
       <div class="ba-practice-meta">
         <div class="ba-practice-stat">
           <span class="n">{today_n:,}</span>
@@ -938,7 +1038,17 @@ try:
 except Exception:
     pass
 
-# Anki add-on dialog "Config" → open our settings UI instead of raw JSON.
+# Inject a "BetterAnki" tab into Anki's native Preferences dialog so every
+# entry point — including the Tools-menu "Preferences…" / app-menu shortcut
+# the user already knows — surfaces our settings alongside Anki's own.
+try:
+    from .settings import install_into_preferences
+    install_into_preferences()
+except Exception:
+    pass
+
+# Anki add-on dialog "Config" → open Preferences on the BetterAnki tab
+# instead of dumping raw JSON in front of the user.
 try:
     mw.addonManager.setConfigAction(__name__, _open_settings)
 except Exception:
