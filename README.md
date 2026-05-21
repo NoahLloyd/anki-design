@@ -69,17 +69,33 @@ syncing a copied collection can push unwanted merges upstream.
 Showcase data (no real collection involved):
 
 ```
-make demo       # stop any old demo, seed a separate base, launch
-make demo-stop  # quit demo Anki
-make demo-clean # remove the entire demo base
+make demo                       # launch the default (full) variant
+make demo VARIANT=single        # or VARIANT=three / VARIANT=full
+make demo-rebuild VARIANT=full  # rebuild a variant's cache (slow, one-time)
+make demo-stop                  # quit the current variant's demo Anki
 ```
 
-`make demo` builds a *separate* `anki-design-demo` base under
-`Anki2-dev/`, populated by `scripts/seed_demo.py` with eleven themed decks
-(USMLE pathology/pharm, Spanish, Japanese N5, periodic table, world & US
-capitals, etc.) and ~4 years of day-by-day revlog history. Your real
-`Anki2/` collection is **never opened** by this path — the seeder refuses
-any target inside your real base.
+`make demo` runs against a *separate* `anki-design-demo-<variant>` base
+under `Anki2-dev/`. Three variants are defined in `scripts/seed_demo.py`:
+
+- `single` — one Spanish deck (~450 cards, ~200 due today).
+- `three` — Spanish + Japanese N5 + Med pathology (~420 cards, ~190 due).
+- `full` — all 17 decks (~1100 cards, ~440 due). Default.
+
+Each variant has a golden cache at `~/Library/Caches/anki-design-demo/<variant>/`
+that's **shared across worktrees** — seed once anywhere, launch instantly
+everywhere. `make demo` restores from cache in ~1s; if no cache exists yet
+it falls through to `demo-rebuild` automatically. Re-run `demo-rebuild` only
+after you change `scripts/seed_demo.py` and want the cache regenerated.
+
+Cleanup:
+
+- `make demo-clean` — drop a variant's live base (keeps the cache).
+- `make demo-clean-cache` — drop a variant's cache.
+- `make demo-clean-all` — nuke every variant's cache + base.
+
+Your real `Anki2/` collection is **never opened** by any of these — the
+seeder refuses any target inside your real base.
 
 How parallelism works:
 

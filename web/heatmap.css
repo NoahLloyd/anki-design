@@ -112,17 +112,6 @@
   box-shadow: 0 0 0 1.5px var(--rf-text, #e6e8ee);
 }
 
-.rf-hm-foot {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  justify-content: flex-end;
-  margin-top: 12px;
-  font-size: 11px;
-  color: var(--rf-text-dim, #9aa0ad);
-}
-.rf-hm-foot .rf-hm-cell { width: 10px; height: 10px; }
-
 /* custom instant tooltip (replaces the slow native title) */
 .rf-hm-tip {
   position: fixed;

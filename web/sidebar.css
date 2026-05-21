@@ -52,6 +52,13 @@ body.ba-with-side {
 .ba-side-mark.ad-logo {
   --ad-logo-size: 20px;
   --ad-logo-ink: var(--rf-ink);
+  cursor: pointer;
+  outline: none;
+}
+.ba-side-mark.ad-logo:focus-visible {
+  outline: 2px solid var(--rf-accent, #6c8cff);
+  outline-offset: 4px;
+  border-radius: 4px;
 }
 
 /* ---------------------------- CROSS-DECK TOTALS ---------------------------- */

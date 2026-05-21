@@ -21,12 +21,21 @@ ANKI_PY ?= $(HOME)/Library/Application Support/AnkiProgramFiles/.venv/bin/python
 # Real base, used only by `make seed` as a read source.
 REAL_BASE := $(HOME)/Library/Application Support/Anki2
 
-.PHONY: dev undev run run-fg logs seed demo-seed demo-run demo demo-stop demo-clean deisolate clean-base build clean
+.PHONY: dev undev run run-fg logs seed demo-seed demo-run demo demo-rebuild demo-stop demo-clean demo-clean-cache demo-clean-all demo-cache-write demo-cache-restore demo-link deisolate clean-base build clean
 
-# Demo base — fully separate from your real Anki and from any other dev base.
-DEMO_NAME := anki-design-demo
-DEMO_BASE := $(HOME)/Library/Application Support/Anki2-dev/$(DEMO_NAME)
-DEMO_LINK := $(DEMO_BASE)/addons21/$(DEMO_NAME)
+# Demo bases — each variant gets its own Anki base + its own golden cache.
+# The cache lives under ~/Library/Caches so it's shared across all worktrees:
+# seed once (slow), load anywhere (fast). The live base under Anki2-dev is
+# the working copy Anki actually launches against.
+#
+# Override the variant per command: `make demo VARIANT=single`.
+# Known variants are declared in scripts/seed_demo.py (VARIANTS dict).
+VARIANT      ?= full
+DEMO_NAME    := anki-design-demo-$(VARIANT)
+DEMO_BASE    := $(HOME)/Library/Application Support/Anki2-dev/$(DEMO_NAME)
+DEMO_LINK    := $(DEMO_BASE)/addons21/$(DEMO_NAME)
+DEMO_CACHE   := $(HOME)/Library/Caches/anki-design-demo/$(VARIANT)
+DEMO_PROFILE := User 1
 
 # Symlink this worktree into its isolated base AND enable web/ hot-reload.
 dev:
@@ -79,49 +88,109 @@ seed:
 
 # SHOWCASE seed: generate a fake-but-realistic demo collection in a
 # *separate* base ($(DEMO_BASE)). Never touches your real Anki or any other
-# worktree's base. Loads 11 themed decks (USMLE pathology/pharm, Spanish,
-# Japanese N5, periodic table, world + US capitals, etc.) with ~4 years of
-# day-by-day revlog history so the heatmap, progress bar, and reviewer all
-# have impressive content to show. Pass FORCE=1 to wipe a prior demo run.
-demo-seed:
+# worktree's base. Each variant has its own deck mix and "today" backlog —
+# see VARIANTS in scripts/seed_demo.py.
+#
+# Writes BOTH the live base (for immediate launch) AND a golden cache
+# under $(DEMO_CACHE). The cache is what `make demo` copies from on
+# subsequent runs across any worktree — seed once, load fast everywhere.
+demo-seed: demo-stop
 	@test -x "$(ANKI_PY)" || { echo "anki venv python not found at: $(ANKI_PY)"; exit 1; }
-	@"$(ANKI_PY)" scripts/seed_demo.py $(if $(FORCE),--force,) --base "$(DEMO_BASE)"
+	@"$(ANKI_PY)" scripts/seed_demo.py --force --variant "$(VARIANT)" --base "$(DEMO_BASE)"
+	@$(MAKE) -s demo-cache-write
+	@$(MAKE) -s demo-link
+	@echo "demo  : seeded variant '$(VARIANT)' into $(DEMO_BASE)"
+	@echo "      : cached at $(DEMO_CACHE)"
+	@echo "next  : make demo-run VARIANT=$(VARIANT)"
+
+# Snapshot the seeded base into the cross-workspace cache. We grab the
+# whole profile dir (collection + media + scheduling data); addons,
+# logs, and prefs are skipped (those are per-launch state, not data).
+demo-cache-write:
+	@test -f "$(DEMO_BASE)/$(DEMO_PROFILE)/collection.anki2" || { echo "no collection at $(DEMO_BASE)/$(DEMO_PROFILE) — seed first"; exit 1; }
+	@mkdir -p "$(DEMO_CACHE)"
+	@rsync -a --delete \
+		--exclude 'addons21/' --exclude 'logs/' --exclude 'run.log' \
+		--exclude 'prefs21.db' --exclude '.DS_Store' \
+		"$(DEMO_BASE)/$(DEMO_PROFILE)/" "$(DEMO_CACHE)/$(DEMO_PROFILE)/"
+
+# Restore the cache to the live demo base (fast — no seeding). Used by
+# `make demo` when the cache for the requested variant already exists.
+demo-cache-restore:
+	@test -d "$(DEMO_CACHE)/$(DEMO_PROFILE)" || { echo "no cache for variant '$(VARIANT)' at $(DEMO_CACHE) — run 'make demo-rebuild VARIANT=$(VARIANT)' first"; exit 1; }
+	@mkdir -p "$(DEMO_BASE)/$(DEMO_PROFILE)"
+	@rsync -a --delete \
+		"$(DEMO_CACHE)/$(DEMO_PROFILE)/" "$(DEMO_BASE)/$(DEMO_PROFILE)/"
+
+# Symlink this worktree's source into the demo base's addons21 so the
+# add-on runs against THIS code (not a copy).
+demo-link:
 	@mkdir -p "$(DEMO_BASE)/addons21"
 	@rm -rf "$(DEMO_LINK)"
 	@ln -s "$(SRC)" "$(DEMO_LINK)"
 	@touch "$(SRC)/.devmode"
-	@echo "demo  : symlinked $(NAME) into $(DEMO_BASE)"
-	@echo "next  : make demo-run"
 
 # Launch Anki against the demo base. Runs alongside your real Anki and
 # alongside this worktree's regular dev instance (unique USER => unique
 # single-instance key).
 demo-run:
 	@test -x "$(ANKI)" || { echo "anki not found at: $(ANKI)"; exit 1; }
-	@test -f "$(DEMO_BASE)/User 1/collection.anki2" || { echo "no demo collection yet — run 'make demo-seed' first"; exit 1; }
+	@test -f "$(DEMO_BASE)/$(DEMO_PROFILE)/collection.anki2" || { echo "no demo collection yet — run 'make demo VARIANT=$(VARIANT)' first"; exit 1; }
 	@USER="$(DEMO_NAME)" LOGNAME="$(DEMO_NAME)" nohup "$(ANKI)" -b "$(DEMO_BASE)" >"$(DEMO_BASE)/run.log" 2>&1 &
-	@echo "launched demo Anki (base: $(DEMO_BASE))"
+	@echo "launched demo Anki ($(VARIANT) variant, base: $(DEMO_BASE))"
 	@echo "log    : tail -f '$(DEMO_BASE)/run.log'"
 
-# Quit any running demo Anki (matches only the demo base path, so this
-# never touches your real Anki or other worktrees' dev instances).
+# Quit any running demo Anki for THIS variant (matches only this variant's
+# base path, so other variants and your real Anki stay running).
 demo-stop:
 	@pids="$$(pgrep -f 'Anki2-dev/$(DEMO_NAME)' || true)"; \
 	if [ -n "$$pids" ]; then \
-	  echo "stopping demo Anki (pids: $$pids)"; \
+	  echo "stopping demo Anki ($(VARIANT), pids: $$pids)"; \
 	  kill $$pids 2>/dev/null; sleep 1; \
 	  kill -9 $$(pgrep -f 'Anki2-dev/$(DEMO_NAME)' || true) 2>/dev/null || true; \
-	else echo "(no demo Anki running)"; fi
+	else echo "(no demo Anki running for variant '$(VARIANT)')"; fi
 
-# One-shot: stop any prior demo Anki, re-seed, launch.
-demo: FORCE=1
-demo: demo-stop demo-seed demo-run
+# `make demo` — the fast path. Stops any prior demo for this variant,
+# loads the cached snapshot into the live base, links the addon, launches.
+# Falls through to `demo-rebuild` if no cache exists yet.
+demo: demo-stop
+	@if [ -d "$(DEMO_CACHE)/$(DEMO_PROFILE)" ]; then \
+	  echo "demo  : loading cached '$(VARIANT)' (instant)"; \
+	  $(MAKE) -s demo-cache-restore; \
+	  $(MAKE) -s demo-link; \
+	  $(MAKE) -s demo-run; \
+	else \
+	  echo "demo  : no cache for '$(VARIANT)' — seeding fresh (slow, one-time)"; \
+	  $(MAKE) -s demo-seed; \
+	  $(MAKE) -s demo-run; \
+	fi
 
-# Remove the entire demo base. Only ever touches $(DEMO_BASE) — your real
-# Anki and other worktree bases are untouched.
+# `make demo-rebuild` — the slow path. Re-runs the seeder from scratch,
+# overwrites the cache + live base, launches. Use this when you change
+# seed_demo.py or want a different variant's golden state.
+demo-rebuild: demo-stop demo-seed demo-run
+
+# Remove the live demo base for this variant (keeps the cache so the next
+# `make demo` is still instant).
 demo-clean: demo-stop
 	@rm -rf "$(DEMO_BASE)"
-	@echo "removed demo base: $(DEMO_BASE)"
+	@echo "removed live demo base: $(DEMO_BASE)"
+	@echo "(cache at $(DEMO_CACHE) preserved — run 'make demo-clean-cache VARIANT=$(VARIANT)' to drop)"
+
+# Drop just the cache for this variant.
+demo-clean-cache:
+	@rm -rf "$(DEMO_CACHE)"
+	@echo "removed cache: $(DEMO_CACHE)"
+
+# Drop ALL caches AND all live demo bases. The full nuke.
+demo-clean-all:
+	@for variant in single three full; do \
+	  pids="$$(pgrep -f "Anki2-dev/anki-design-demo-$$variant" || true)"; \
+	  [ -n "$$pids" ] && kill $$pids 2>/dev/null && sleep 1 && kill -9 $$pids 2>/dev/null || true; \
+	  rm -rf "$(HOME)/Library/Application Support/Anki2-dev/anki-design-demo-$$variant"; \
+	  rm -rf "$(HOME)/Library/Caches/anki-design-demo/$$variant"; \
+	  echo "wiped $$variant"; \
+	done
 
 # Make an existing seeded base safe without re-copying (clears AnkiWeb login).
 deisolate:
