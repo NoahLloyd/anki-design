@@ -192,12 +192,122 @@ body.ba-with-side {
 
 /* Streak block + lifetime stats moved out of the sidebar; styles deleted. */
 
+/* ---------------------------- ICON HOVER ANIMATIONS ----------------------------
+   Each row's icon gets a small, on-hover gesture matched to its glyph:
+   layers lift, plus rotates, search wiggles, bars rise, arrows bob,
+   sync spins, gear turns. Animations target inner <g class="ba-i-*">
+   hooks set in sidebar.js so the parent .ba-side-icon's own color
+   transition stays clean. `transform-box: fill-box` makes
+   transform-origin compute against the group's own bounding box rather
+   than the SVG's outer canvas — without it, rotations pivot around the
+   (0,0) corner instead of the glyph center. Focus-visible mirrors hover
+   so keyboard nav gets the same gesture. */
+
+.ba-i-decks-top, .ba-i-decks-mid, .ba-i-decks-bot,
+.ba-i-plus, .ba-i-search-lens, .ba-i-bar,
+.ba-i-import, .ba-i-sync, .ba-i-gear {
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 260ms cubic-bezier(.2, .8, .2, 1);
+}
+
+/* DECKS — top card peels up, middle nudges a touch — reads as lifting
+   a sheet off the stack. */
+.ba-side-item[data-cmd="decks"]:hover .ba-i-decks-top,
+.ba-side-item[data-cmd="decks"]:focus-visible .ba-i-decks-top {
+  transform: translateY(-2px);
+}
+.ba-side-item[data-cmd="decks"]:hover .ba-i-decks-mid,
+.ba-side-item[data-cmd="decks"]:focus-visible .ba-i-decks-mid {
+  transform: translateY(-0.5px);
+}
+
+/* ADD / CREATE (idle) — plus rotates 90° (briefly an "x"). */
+.ba-side-item[data-cmd="add"]:hover .ba-i-plus,
+.ba-side-item[data-cmd="add"]:focus-visible .ba-i-plus,
+.ba-side-newdeck[data-state="idle"]:hover .ba-i-plus,
+.ba-side-newdeck[data-state="idle"]:focus-visible .ba-i-plus {
+  transform: rotate(90deg);
+}
+
+/* BROWSE — magnifying lens scans (rotates left, then right). */
+.ba-side-item[data-cmd="browse"]:hover .ba-i-search-lens,
+.ba-side-item[data-cmd="browse"]:focus-visible .ba-i-search-lens {
+  animation: ba-i-search-scan 700ms ease-in-out;
+}
+@keyframes ba-i-search-scan {
+  0%, 100% { transform: rotate(0); }
+  30%      { transform: rotate(-12deg); }
+  70%      { transform: rotate(12deg); }
+}
+
+/* STATS — bars rise from their base, staggered 70ms apart. */
+.ba-i-bar { transform-origin: center bottom; }
+.ba-side-item[data-cmd="stats"]:hover .ba-i-bar-1,
+.ba-side-item[data-cmd="stats"]:focus-visible .ba-i-bar-1 {
+  animation: ba-i-bar-rise 520ms cubic-bezier(.2, .8, .2, 1) 0ms;
+}
+.ba-side-item[data-cmd="stats"]:hover .ba-i-bar-2,
+.ba-side-item[data-cmd="stats"]:focus-visible .ba-i-bar-2 {
+  animation: ba-i-bar-rise 520ms cubic-bezier(.2, .8, .2, 1) 70ms;
+}
+.ba-side-item[data-cmd="stats"]:hover .ba-i-bar-3,
+.ba-side-item[data-cmd="stats"]:focus-visible .ba-i-bar-3 {
+  animation: ba-i-bar-rise 520ms cubic-bezier(.2, .8, .2, 1) 140ms;
+}
+@keyframes ba-i-bar-rise {
+  0%   { transform: scaleY(0.55); }
+  60%  { transform: scaleY(1.18); }
+  100% { transform: scaleY(1); }
+}
+
+/* IMPORT — arrow bobs upward, overshoots a touch, then settles. */
+.ba-side-item[data-cmd="import"]:hover .ba-i-import,
+.ba-side-item[data-cmd="import"]:focus-visible .ba-i-import {
+  animation: ba-i-import-bob 580ms cubic-bezier(.2, .8, .2, 1);
+}
+@keyframes ba-i-import-bob {
+  0%   { transform: translateY(0); }
+  40%  { transform: translateY(-2.5px); }
+  70%  { transform: translateY(0.5px); }
+  100% { transform: translateY(0); }
+}
+
+/* SYNC — one full 360° turn on hover. Skipped while the row is already
+   spinning for an active sync, so the two animations don't fight. */
+.ba-side-item[data-cmd="sync"]:not(.ba-sync-active):hover .ba-i-sync,
+.ba-side-item[data-cmd="sync"]:not(.ba-sync-active):focus-visible .ba-i-sync {
+  animation: ba-i-sync-spin 720ms cubic-bezier(.4, 0, .2, 1);
+}
+@keyframes ba-i-sync-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* SETTINGS — gear turns a quarter rotation, the classic gear gesture. */
+.ba-side-item[data-cmd="settings"]:hover .ba-i-gear,
+.ba-side-item[data-cmd="settings"]:focus-visible .ba-i-gear {
+  transform: rotate(90deg);
+  transition: transform 600ms cubic-bezier(.4, 0, .2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ba-i-decks-top, .ba-i-decks-mid, .ba-i-decks-bot,
+  .ba-i-plus, .ba-i-search-lens, .ba-i-bar,
+  .ba-i-import, .ba-i-sync, .ba-i-gear {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
 /* ---------------------------- NEW DECK ROW ----------------------------
    Morphing inline-create row. Idle: same shape as .ba-side-act. Active:
    the label slot swaps for a borderless text input — Enter creates the
-   deck via pycmd("ba:create:<name>"). The icon is the only stable
-   anchor; everything else cross-fades in the same flex slot so nothing
-   in the row moves. State is held on the row via data-state. */
+   deck via pycmd("ba:create:<name>"). The icon column anchors the swap,
+   but is itself a two-glyph cross-fade: a plus in idle and a submit
+   (right-arrow) in active. Clicking the submit icon is equivalent to
+   pressing Enter from the input. State is held on the row via
+   data-state. */
 .ba-side-newdeck { cursor: pointer; }
 .ba-side-newdeck[data-state="active"] { cursor: text; }
 .ba-side-newdeck:focus-visible { outline: none; }
@@ -266,18 +376,62 @@ body.ba-with-side {
   pointer-events: auto;
   transform: translateX(0);
 }
-.ba-side-newdeck[data-state="active"] .ba-side-icon {
-  color: var(--rf-accent, #6c8cff);
-  transform: rotate(0deg) scale(1.08);
-  transition: color 220ms ease, transform 220ms cubic-bezier(.2, .8, .2, 1);
+
+/* Icon slot — a fixed 14×14 box that holds the plus and submit SVGs
+   stacked on top of each other. They cross-fade as data-state flips.
+   Their shared horizontal stroke creates the morph illusion: the
+   vertical arm of the plus dissolves and the arrowhead grows in. */
+.ba-side-newdeck-icons {
+  position: relative;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  display: inline-block;
+  color: var(--rf-ink-faint);
+  transition: color 220ms ease, transform 180ms cubic-bezier(.2, .8, .2, 1);
 }
-.ba-side-newdeck .ba-side-icon {
-  transition: color 220ms ease, transform 220ms cubic-bezier(.2, .8, .2, 1);
+.ba-side-newdeck[data-state="active"] .ba-side-newdeck-icons {
+  color: var(--rf-accent, #6c8cff);
+  cursor: pointer;
+}
+/* Tactile feedback when the icon is acting as a submit button. */
+.ba-side-newdeck[data-state="active"] .ba-side-newdeck-icons:hover {
+  transform: scale(1.18);
+}
+.ba-side-newdeck[data-state="active"] .ba-side-newdeck-icons:active {
+  transform: scale(0.92);
+}
+.ba-side-newdeck-icon--plus,
+.ba-side-newdeck-icon--submit {
+  position: absolute;
+  inset: 0;
+  width: 14px;
+  height: 14px;
+  transition: opacity 200ms ease,
+              transform 260ms cubic-bezier(.2, .8, .2, 1);
+}
+.ba-side-newdeck[data-state="idle"] .ba-side-newdeck-icon--plus {
+  opacity: 1;
+  transform: scale(1);
+}
+.ba-side-newdeck[data-state="idle"] .ba-side-newdeck-icon--submit {
+  opacity: 0;
+  transform: scale(0.7);
+}
+.ba-side-newdeck[data-state="active"] .ba-side-newdeck-icon--plus {
+  opacity: 0;
+  transform: scale(0.7);
+}
+.ba-side-newdeck[data-state="active"] .ba-side-newdeck-icon--submit {
+  opacity: 1;
+  transform: scale(1.08);
 }
 @media (prefers-reduced-motion: reduce) {
   .ba-side-newdeck-label,
   .ba-side-newdeck-input,
-  .ba-side-newdeck .ba-side-icon {
+  .ba-side-newdeck-icons,
+  .ba-side-newdeck-icon--plus,
+  .ba-side-newdeck-icon--submit {
     transition: none;
   }
 }
