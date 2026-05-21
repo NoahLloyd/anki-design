@@ -220,6 +220,10 @@ def on_webview_will_set_content(web_content: WebContent, context: Optional[Any])
         # Whole-row click → study (skips the Overview page). Loaded
         # unconditionally on the deck browser, independent of sidebar.
         web_content.js.append(f"{WEB}/deckrow.js")
+        # Expand/collapse chevron on parent decks. Tree is forced fully
+        # expanded server-side (see _patch_deck_tree_always_expanded);
+        # this JS folds descendants client-side, session-only.
+        web_content.js.append(f"{WEB}/decktree.js")
         # Tag the deck browser's <center> so theme.css can scope the heavy
         # homepage layout to it alone — the Overview shares this stylesheet
         # and must keep its own simple layout (just palette + type).
@@ -2224,12 +2228,31 @@ def _dev_screenshot(request_path: str) -> None:
                 from aqt import dialogs
                 ac = dialogs._dialogs.get("AddCards", [None, None])[1]
                 if ac is None:
+                    try:
+                        from . import addcard_embed
+                        ac = addcard_embed._state.get("addcards")
+                    except Exception:
+                        ac = None
+                if ac is None or not getattr(ac, "editor", None):
                     return
                 web = ac.editor.web
-                web.eval(
-                    "(function(){var b=document.querySelector('#settings button');"
-                    "if(b)b.click();})();"
-                )
+                # Anki's Svelte popup listens for a real PointerEvent — .click()
+                # alone doesn't fire it. Dispatch pointerdown + mousedown + click
+                # so the floating-ui library actually toggles the dropdown.
+                web.eval("""
+                  (function(){
+                    var btn = document.querySelector('#settings button');
+                    if (!btn) return;
+                    function fire(name) {
+                      var ev = new MouseEvent(name, {bubbles:true, cancelable:true, view:window, button:0});
+                      btn.dispatchEvent(ev);
+                    }
+                    fire('pointerdown');
+                    fire('mousedown');
+                    fire('mouseup');
+                    fire('click');
+                  })();
+                """)
             except Exception:
                 pass
         if click_cog:

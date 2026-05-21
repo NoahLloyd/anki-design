@@ -98,19 +98,10 @@ html[data-ba-editor="add"] .image-overlay:empty {
  *   1. Icon buttons are uniformly sized (square) so the row reads as a
  *      coherent strip, not a jumble of variable rectangles.
  *   2. Hover background fully contains each icon — no clipping at the top.
- *   3. The row scrolls horizontally when it doesn't fit (overflow-x:auto)
- *      while leaving dropdowns free to escape vertically (overflow-y:clip
- *      with negative-margin scroll-padding so the popups stay visible).
- *
- * The gear's popup menu lives inside .button-group#settings (positioned by
- * Popper). When toolbar overflow-x is on, Popper's `position: absolute`
- * panel is clipped. We use `overflow-y: visible` on the outer .editor-toolbar
- * and put `overflow-x: auto` on the inner .button-toolbar; the popup is
- * elevated via z-index and any vertical clipping is avoided because the
- * popup expands DOWN and the toolbar's bottom edge is the scroll axis.
- * For horizontal scroll, we accept that popups too wide for the viewport
- * will follow the scroll — acceptable since the gear is anchored to its
- * button which scrolls with it.
+ *   3. Dropdown popups (eraser palette, gear settings, color pickers) can
+ *      extend DOWN past the toolbar without being clipped. See the overflow
+ *      block on .button-toolbar below for the spec-level reason this is
+ *      `overflow-x: clip` rather than `overflow-x: auto`.
  */
 html[data-ba-editor="add"] .editor-toolbar {
   background: var(--ba-panel) !important;
@@ -124,7 +115,17 @@ html[data-ba-editor="add"] .button-toolbar.btn-toolbar {
   --buttons-size: 1.85rem !important;
   --buttons-wrap: nowrap !important;
   flex-wrap: nowrap !important;
-  overflow-x: auto !important;
+  /* CRITICAL: per the CSS Overflow spec, mixing overflow-x: auto with
+     overflow-y: visible forces BOTH axes to auto — which clips the eraser /
+     settings / color picker dropdowns at the bottom edge of the toolbar.
+     `overflow-x: clip` + `overflow-y: visible` is the one combination the
+     spec explicitly preserves, so the popups can extend down freely while
+     horizontal overflow is still hidden. The trade-off: if a user squeezes
+     the window narrow enough that the toolbar can't fit, trailing buttons
+     get cut off with no scrollbar. That's the right call here — the buttons
+     row is already short and dropdown popups are far more important than a
+     rarely-used horizontal scroll. */
+  overflow-x: clip !important;
   overflow-y: visible !important;
   align-items: center !important;
   padding: 6px 24px !important;
@@ -270,15 +271,15 @@ html[data-ba-editor="add"] #notetype .label-button:hover {
 /* Gear: push to the very end via flex order. */
 html[data-ba-editor="add"] .item#settings { order: 99 !important; }
 html[data-ba-editor="add"] .item#notetype { order: -1 !important; }
-/* Dropdown panels (Popper-based "floating" elements) live inside the
-   toolbar's DOM tree. Their default visibility is toggled by Anki; we just
-   ensure they stack above other content when shown and don't get clipped.
+/* Dropdown panels (Popper-based "floating" elements). Anki's stylesheet
+   already puts them at z-index 890 — high enough to clear the sidebar
+   (z-index 50) and the editor's own canvas-elevated chrome (z-index 60).
+   We must NOT override that with our own z-index: a previous `z-index: 50
+   !important` here was actually demoting the popups *below* the sidebar,
+   making them invisible when the eraser / settings dropdowns opened.
    IMPORTANT: don't add a background/border unconditionally — when the panel
    is closed it's still in the DOM and our styles would draw a visible
    "circle" around every chevron-button in the toolbar. */
-html[data-ba-editor="add"] .floating {
-  z-index: 50 !important;
-}
 html[data-ba-editor="add"] .floating[data-show],
 html[data-ba-editor="add"] .floating[style*="display: block"],
 html[data-ba-editor="add"] .floating[style*="display:flex"] {
