@@ -1180,6 +1180,23 @@ def _dev_screenshot(request_path: str) -> None:
                 pass
         if fill_sample:
             QTimer.singleShot(400, _fill)
+        # Optionally click the toolbar cog to verify the dropdown renders.
+        click_cog = bool(req.get("click_cog"))
+        def _click_cog() -> None:
+            try:
+                from aqt import dialogs
+                ac = dialogs._dialogs.get("AddCards", [None, None])[1]
+                if ac is None:
+                    return
+                web = ac.editor.web
+                web.eval(
+                    "(function(){var b=document.querySelector('#settings button');"
+                    "if(b)b.click();})();"
+                )
+            except Exception:
+                pass
+        if click_cog:
+            QTimer.singleShot(700, _click_cog)
 
         # Give the WebEngine view time to render (templates load async).
         # 1500ms is conservative; the editor.html bundle plus Svelte hydration

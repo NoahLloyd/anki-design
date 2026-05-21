@@ -4,14 +4,13 @@
  * window (data-ba-editor="add"). Anki's own editor.css uses Bootstrap-ish
  * tokens; we override the visible surface to match the editorial chrome.
  *
- * Anki's Svelte components carry hashed class suffixes (e.g.
- * `.editor-toolbar.svelte-1jmvn33`), but the unhashed base class is stable
- * across Anki versions, so we target by base class alone.
+ * Svelte components carry hashed class suffixes (.editor-toolbar.svelte-1jmvn33);
+ * the unhashed base class is stable across Anki versions, so we target by
+ * base class alone.
  */
 
-/* Design tokens scoped to the editor in add mode. */
+/* ---------- Design tokens ---------- */
 html[data-ba-editor="add"] {
-  /* light defaults */
   --ba-paper: #f6f3ec;
   --ba-panel: #fbf9f3;
   --ba-field: #ffffff;
@@ -24,6 +23,7 @@ html[data-ba-editor="add"] {
   --ba-accent: var(--rf-accent, #6c8cff);
   --ba-serif: var(--rf-serif, "New York", "Hoefler Text", Charter, Georgia, serif);
   --ba-sans: var(--rf-sans, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif);
+  --ba-radius: 8px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -42,10 +42,6 @@ html[data-ba-editor="add"] {
 html[data-ba-editor="add"][data-rf-theme="dark"] {
   --ba-paper: #0b0c0f;
   --ba-panel: #15171c;
-  /* The field input keeps a paper-light background even in dark mode so
-     the card content renders the same as it will on the review screen
-     (where the note type stylesheet sets a dark-on-light look by default).
-     This is consistent with native Anki's add-card field behavior. */
   --ba-field: #f6f3ec;
   --ba-ink: #eceae2;
   --ba-ink-dim: #9b978a;
@@ -61,93 +57,58 @@ html[data-ba-editor="add"], html[data-ba-editor="add"] body {
   font-family: var(--ba-sans) !important;
 }
 
-/* --- The note editor frame --- */
 html[data-ba-editor="add"] .note-editor {
   background: var(--ba-paper) !important;
   color: var(--ba-ink) !important;
 }
-/* The mathjax & image overlays are positioned inside the fields scroll
-   area but have no business taking layout space when empty. */
+
 html[data-ba-editor="add"] .mathjax-overlay:empty,
 html[data-ba-editor="add"] .image-overlay:empty {
   display: none !important;
 }
 
-/* --- Top format toolbar --- */
+/* ---------- Format toolbar ----------
+ * We CANNOT use overflow:hidden on the toolbar or its parent — that clips
+ * the gear's dropdown menu (which is absolutely positioned but rendered
+ * inside the toolbar's DOM tree). The toolbar lives in a fixed-height row
+ * already, so we just allow overflow:visible and trust the icon row to fit.
+ */
 html[data-ba-editor="add"] .editor-toolbar {
   background: var(--ba-panel) !important;
   border-bottom: 1px solid var(--ba-line) !important;
-  padding: 8px 22px !important;
+  padding: 6px 24px !important;
+  overflow: visible !important;
   box-shadow: none !important;
 }
 html[data-ba-editor="add"] .button-toolbar.btn-toolbar {
   gap: 2px !important;
-  /* Anki gates the toolbar wrap via this CSS var, not by flex-wrap. */
   --buttons-size: 1.55rem !important;
   --buttons-wrap: nowrap !important;
-  overflow-x: auto !important;
-  overflow-y: hidden !important;
-  padding-right: 8px;
-  scrollbar-width: none; /* Firefox */
+  overflow: visible !important;
   align-items: center !important;
 }
-/* Move the gear/options group to the very end of the toolbar — it's a
-   "more" menu, not a formatting tool, and looked orphaned between the
-   notetype links and B/I/U. The .item lives inside .dynamically-slottable,
-   which IS a flex container, so the order applies there. */
-html[data-ba-editor="add"] .dynamically-slottable {
-  display: flex !important;
-  align-items: center !important;
-  flex-wrap: nowrap !important;
-}
-html[data-ba-editor="add"] .item#settings {
-  order: 99 !important;
-  margin-left: 6px !important;
-}
-html[data-ba-editor="add"] .item#notetype {
-  order: -1 !important;
-}
-html[data-ba-editor="add"] .button-toolbar.btn-toolbar::-webkit-scrollbar {
-  height: 0 !important;
-  display: none !important;
-}
-html[data-ba-editor="add"] .editor-toolbar {
-  overflow: hidden !important;
-}
-/* Kill the boxy borders/radii Bootstrap stamps onto every button-group and
-   button-group-item — we want a clean horizontal row of pill icons. */
 html[data-ba-editor="add"] .button-group,
 html[data-ba-editor="add"] .button-group.btn-group,
 html[data-ba-editor="add"] .button-group-item,
 html[data-ba-editor="add"] .dynamically-slottable {
   background: transparent !important;
   border: 0 !important;
-  border-radius: 8px !important;
+  border-radius: 6px !important;
   padding: 0 !important;
-  gap: 2px !important;
+  gap: 1px !important;
   box-shadow: none !important;
 }
-/* Vertical divider between adjacent toolbar groups. */
-html[data-ba-editor="add"] .button-toolbar.btn-toolbar > .item + .item {
-  position: relative;
-  padding-left: 12px !important;
-  margin-left: 0 !important;
-}
-html[data-ba-editor="add"] .button-toolbar.btn-toolbar > .item + .item::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 8px;
-  bottom: 8px;
-  width: 1px;
-  background: var(--ba-line);
+html[data-ba-editor="add"] .dynamically-slottable {
+  display: flex !important;
+  align-items: center !important;
+  flex-wrap: nowrap !important;
 }
 html[data-ba-editor="add"] .icon-button,
 html[data-ba-editor="add"] .label-button {
   color: var(--ba-ink-dim) !important;
   background: transparent !important;
   border: 0 !important;
-  border-radius: 7px !important;
+  border-radius: 6px !important;
   font-family: var(--ba-sans) !important;
   font-size: 10.5pt !important;
   padding: 5px 7px !important;
@@ -172,65 +133,86 @@ html[data-ba-editor="add"] .label-button svg {
   width: 18px !important;
   height: 18px !important;
 }
-/* "Fields..." / "Cards..." should read as quiet meta links, not buttons. */
+/* "Fields..." / "Cards..." styled as quiet metadata links in sans. */
 html[data-ba-editor="add"] #notetype .label-button {
-  font-style: italic !important;
-  font-family: var(--ba-serif) !important;
+  font-style: normal !important;
+  font-family: var(--ba-sans) !important;
   color: var(--ba-ink-faint) !important;
-  font-size: 10.5pt !important;
-  padding: 6px 8px !important;
+  font-size: 10pt !important;
+  font-weight: 500 !important;
 }
 html[data-ba-editor="add"] #notetype .label-button:hover {
   color: var(--ba-ink) !important;
   background: var(--ba-hover) !important;
 }
+/* Gear: push to the very end via flex order. */
+html[data-ba-editor="add"] .item#settings { order: 99 !important; }
+html[data-ba-editor="add"] .item#notetype { order: -1 !important; }
+/* Dropdown panels (Popper-based "floating" elements) live inside the
+   toolbar's DOM tree. Their default visibility is toggled by Anki; we just
+   ensure they stack above other content when shown and don't get clipped.
+   IMPORTANT: don't add a background/border unconditionally — when the panel
+   is closed it's still in the DOM and our styles would draw a visible
+   "circle" around every chevron-button in the toolbar. */
+html[data-ba-editor="add"] .floating {
+  z-index: 50 !important;
+}
+html[data-ba-editor="add"] .floating[data-show],
+html[data-ba-editor="add"] .floating[style*="display: block"],
+html[data-ba-editor="add"] .floating[style*="display:flex"] {
+  background: var(--ba-panel) !important;
+  border: 1px solid var(--ba-line-strong) !important;
+  border-radius: 10px !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18) !important;
+  padding: 6px !important;
+}
 
-/* --- Fields list --- */
+/* ---------- Fields ---------- */
 html[data-ba-editor="add"] .fields {
   background: var(--ba-paper) !important;
-  padding: 14px 24px 2px 24px !important;
+  padding: 18px 28px 4px 28px !important;
 }
 html[data-ba-editor="add"] .field-container {
   background: transparent !important;
   border: 0 !important;
-  margin-bottom: 2px !important;
+  margin-bottom: 14px !important;
   padding: 0 !important;
 }
-/* Highlight the focused field — the one the next keystroke writes to. */
-html[data-ba-editor="add"] .field-container:focus-within .label-name {
-  color: var(--ba-accent) !important;
-}
 
-/* Field label row — touch only what we need. */
+/* Field label — small uppercase sans, like a section subhead. Quiet at
+   rest, accent on focus. Sans-serif at this small size reads better than
+   italic-serif (which felt unreadable). */
+html[data-ba-editor="add"] .label-container {
+  padding: 0 4px 5px 4px !important;
+  border: 0 !important;
+  background: transparent !important;
+}
 html[data-ba-editor="add"] .label-container .label-name {
   font-family: var(--ba-sans) !important;
-  font-size: 9pt !important;
-  font-weight: 700 !important;
-  letter-spacing: 1.4px !important;
+  font-style: normal !important;
+  font-size: 9.5pt !important;
+  font-weight: 600 !important;
+  letter-spacing: 1.2px !important;
   text-transform: uppercase !important;
   color: var(--ba-ink-faint) !important;
+  transition: color 160ms ease;
 }
 html[data-ba-editor="add"] .field-container:focus-within .label-name {
   color: var(--ba-accent) !important;
 }
-
-/* Hide just the chevron badge — the .collapse-label wraps the label NAME
-   so we mustn't display:none it. */
+/* Hide the chevron — fields aren't collapsible in the add window. */
 html[data-ba-editor="add"] .collapse-badge {
   display: none !important;
 }
 
-/* Field state icons (sticky pin, HTML edit, plain-text badge):
-   reveal only on hover so the field row stays calm at rest. The Svelte
-   templates also stamp them in by default for focused fields — we override
-   that so they're consistent. */
+/* Field state icons (sticky pin, HTML edit) — hover only. */
 html[data-ba-editor="add"] .field-state {
   opacity: 0;
   transition: opacity 180ms ease;
   pointer-events: none;
 }
 html[data-ba-editor="add"] .field-container:hover .field-state {
-  opacity: 0.6;
+  opacity: 0.55;
   pointer-events: auto;
 }
 html[data-ba-editor="add"] .field-container:hover .field-state:hover,
@@ -253,41 +235,46 @@ html[data-ba-editor="add"] .field-state .badge:hover {
   border-radius: 6px !important;
 }
 
-/* The actual editable box. Override both the outer .editing-area and the
-   inner .rich-text-input — Anki's editor.css sets backgrounds on both, and
-   without overriding the inner one the dark-mode bg shows through. */
+/* Field input box. Anki nests:
+       editor-field > editing-area > collapsible > rich-text-input >
+       rich-text-relative > rich-text-editable
+   Several of these ship with their own border/radius from editor.css,
+   which stack into a visible double-border. Strip them all and paint a
+   single border on .editor-field (the outermost wrapper). Focus inside
+   the rich-text-editable propagates :focus-within all the way up. */
+html[data-ba-editor="add"] .editor-field,
 html[data-ba-editor="add"] .editing-area,
-html[data-ba-editor="add"] .editing-area .rich-text-input,
-html[data-ba-editor="add"] .editing-area .plain-text-input {
+html[data-ba-editor="add"] .rich-text-input,
+html[data-ba-editor="add"] .rich-text-relative,
+html[data-ba-editor="add"] .rich-text-editable,
+html[data-ba-editor="add"] .plain-text-input {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+html[data-ba-editor="add"] .editor-field {
   background: var(--ba-field) !important;
-  color: #1f1d18 !important; /* readable on the cream/white field bg */
-  border-radius: 10px !important;
-}
-html[data-ba-editor="add"] .editing-area {
   border: 1px solid var(--ba-line) !important;
-  padding: 0 !important;
-  transition: border-color 160ms ease, box-shadow 160ms ease,
-              background 160ms ease;
-  overflow: hidden;  /* clip the inner bg to the rounded corners */
+  border-radius: var(--ba-radius) !important;
+  overflow: hidden !important;
+  transition: border-color 160ms ease, background 160ms ease;
 }
-html[data-ba-editor="add"] .editing-area:focus-within {
+html[data-ba-editor="add"] .editor-field:focus-within {
   border-color: var(--ba-accent) !important;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ba-accent) 16%, transparent) !important;
 }
 html[data-ba-editor="add"] .rich-text-editable,
 html[data-ba-editor="add"] .plain-text-input {
-  padding: 8px 14px !important;
+  padding: 10px 14px !important;
   min-height: 22px !important;
   font-family: var(--ba-serif) !important;
   font-size: 13pt !important;
   line-height: 1.5 !important;
-  color: #1f1d18 !important; /* always-dark text on the cream field bg */
+  color: #1f1d18 !important;
   background: transparent !important;
   border: 0 !important;
   outline: none !important;
 }
-/* Placeholder text in empty fields. Svelte tags rich-text-editable with
-   `.empty` when the contenteditable has no content. */
 html[data-ba-editor="add"] .rich-text-editable.empty::before {
   font-family: var(--ba-sans) !important;
   font-style: normal !important;
@@ -305,86 +292,101 @@ html[data-ba-editor="add"] .field-container[data-index="1"] .rich-text-editable.
 html[data-ba-editor="add"] .field-container:not([data-index="0"]):not([data-index="1"]) .rich-text-editable.empty::before {
   content: "Optional";
 }
-/* Cursor-friendly tone for the first/required field. */
-html[data-ba-editor="add"] .field-container:first-of-type .editing-area {
-  background: var(--ba-field) !important;
-}
 
-/* --- Tags --- *
- * The Tags section is NOT inside .fields. It's a top-level .collapse-label
- * (header text "Tags") followed by a .collapsible wrapping a .tag-editor.
- * We distinguish the tags' collapse-label from the field collapse-labels by
- * title="Collapse" (vs "Collapse field" for the fields). */
+/* ---------- Tags ----------
+ * The Svelte tag editor renders a top "Tags" header (a .collapse-label
+ * outside .fields) followed by a .collapsible wrapping a .tag-editor. The
+ * native chrome bundles the heading, a chevron, and a tag-icon button into
+ * an awkward row. We rebuild it as a single clean line:
+ *
+ *      tags  ·  #anatomy  #europe  +
+ *
+ * (a quiet italic-serif label, then chips, then a "+" affordance — but
+ * still backed by Anki's tag autocomplete since we don't replace the input).
+ */
+/* "Tags" header — match the field labels (small uppercase sans). The
+   collapse-label span contains both a chevron (hidden via .collapse-badge)
+   and the literal text "Tags"; we zero the text via font-size:0 then put
+   "TAGS" in a ::before with explicit size so the casing is consistent. */
 html[data-ba-editor="add"] .collapse-label[title="Collapse"] {
-  display: block !important;
-  padding: 14px 24px 6px 24px !important;
-  margin-top: 12px !important;
+  display: flex !important;
+  align-items: center !important;
+  padding: 14px 28px 4px 28px !important;
+  margin: 14px 0 0 0 !important;
   font-family: var(--ba-sans) !important;
-  font-size: 9pt !important;
-  font-weight: 700 !important;
-  letter-spacing: 1.4px !important;
-  text-transform: uppercase !important;
+  font-style: normal !important;
+  font-size: 0 !important;
   color: var(--ba-ink-faint) !important;
   border-top: 1px solid var(--ba-line) !important;
   background: var(--ba-paper) !important;
+  text-transform: uppercase !important;
+  letter-spacing: 1.2px !important;
 }
-/* The tag input itself */
-html[data-ba-editor="add"] .tag-editor {
-  background: var(--ba-paper) !important;
-  padding: 4px 24px 14px 24px !important;
-}
-html[data-ba-editor="add"] .tag-add-button,
-html[data-ba-editor="add"] .tag-options-button {
-  color: var(--ba-ink-faint) !important;
-  background: transparent !important;
-  border: 0 !important;
-  border-radius: 6px !important;
-  padding: 4px !important;
-}
-html[data-ba-editor="add"] .tag-add-button:hover,
-html[data-ba-editor="add"] .tag-options-button:hover {
-  background: var(--ba-hover) !important;
-  color: var(--ba-ink) !important;
-}
-html[data-ba-editor="add"] .tag-add-button svg,
-html[data-ba-editor="add"] .tag-options-button svg {
-  width: 16px !important;
-  height: 16px !important;
-}
-html[data-ba-editor="add"] .tag-spacer {
-  padding: 6px 8px !important;
-  color: var(--ba-ink) !important;
-  font-family: var(--ba-sans) !important;
-  position: relative;
-  flex: 1;
-}
-/* Placeholder hint when no tags. .tag-spacer is a contenteditable that
-   contains a single <br> by default; using ::after on the parent puts the
-   placeholder visually inside the area. The tag-editor adds children when
-   tags are present, so we hide the placeholder when there's more than one. */
-html[data-ba-editor="add"] .tag-editor:not(:focus-within)::after {
-  content: "Add tags";
-  position: absolute;
-  left: 70px;  /* clear of the .tag-add-button icons */
-  top: 50%;
-  transform: translateY(-50%);
-  color: var(--ba-ink-faint) !important;
-  font-family: var(--ba-sans);
-  font-size: 11pt;
-  pointer-events: none;
-}
-html[data-ba-editor="add"] .tag-editor {
-  position: relative;
-}
-/* If there are any tag badges, hide the placeholder. */
-html[data-ba-editor="add"] .tag-editor:has(.tag) {
-  /* support browsers without :has — but most modern WebEngine supports it */
-}
-html[data-ba-editor="add"] .tag-editor:has(.tag)::after {
-  display: none !important;
+html[data-ba-editor="add"] .collapse-label[title="Collapse"]::before {
+  content: "TAGS";
+  font-size: 9.5pt;
+  font-weight: 600;
 }
 
-/* CodeMirror (plain-text mode) */
+/* Tag editor row. */
+html[data-ba-editor="add"] .tag-editor {
+  background: var(--ba-paper) !important;
+  padding: 4px 28px 14px 28px !important;
+  display: flex !important;
+  align-items: center !important;
+  flex-wrap: wrap !important;
+  gap: 6px !important;
+}
+/* Hide the leading "tag-options-button" cluster — that's the tag icon plus
+   the tag-plus button bundled inelegantly. We add a clean "+" via the
+   tag-spacer's surrounding area instead. */
+html[data-ba-editor="add"] .tag-options-button {
+  display: none !important;
+}
+html[data-ba-editor="add"] .tag-add-button {
+  background: transparent !important;
+  border: 0 !important;
+  padding: 0 !important;
+}
+/* The actual tag-typing area. */
+html[data-ba-editor="add"] .tag-spacer {
+  flex: 1;
+  padding: 6px 10px !important;
+  color: var(--ba-ink) !important;
+  font-family: var(--ba-sans) !important;
+  font-size: 11pt !important;
+  background: var(--ba-field) !important;
+  border-radius: var(--ba-radius) !important;
+  border: 1px solid var(--ba-line) !important;
+  min-height: 18px !important;
+  position: relative;
+}
+html[data-ba-editor="add"] .tag-editor:focus-within .tag-spacer {
+  border-color: var(--ba-accent) !important;
+}
+/* Placeholder when no tags. */
+html[data-ba-editor="add"] .tag-editor:not(:focus-within) .tag-spacer::before {
+  content: "Add tags";
+  color: var(--ba-ink-faint) !important;
+  pointer-events: none;
+}
+html[data-ba-editor="add"] .tag-editor:focus-within .tag-spacer::before,
+html[data-ba-editor="add"] .tag-editor:has(.tag) .tag-spacer::before {
+  display: none !important;
+}
+/* Tag chips (when tags present). */
+html[data-ba-editor="add"] .tag {
+  background: color-mix(in srgb, var(--ba-accent) 14%, transparent) !important;
+  color: var(--ba-accent) !important;
+  border-radius: 999px !important;
+  padding: 3px 10px !important;
+  font-size: 10.5pt !important;
+  font-family: var(--ba-sans) !important;
+  font-weight: 500 !important;
+  margin-right: 4px !important;
+}
+
+/* CodeMirror (plain-text mode). */
 html[data-ba-editor="add"] .code-mirror,
 html[data-ba-editor="add"] .CodeMirror {
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace !important;
@@ -393,7 +395,7 @@ html[data-ba-editor="add"] .CodeMirror {
   color: var(--ba-ink) !important;
 }
 
-/* Scrollbars inside the webview */
+/* Scrollbars. */
 html[data-ba-editor="add"] ::-webkit-scrollbar {
   width: 10px;
   height: 10px;

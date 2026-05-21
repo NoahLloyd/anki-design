@@ -13,10 +13,12 @@ TITLE="${2:?missing title substring (or \"main\")}"
 shift 2 || true
 OPEN_FLAG="false"
 FILL_FLAG="false"
+COG_FLAG="false"
 for arg in "$@"; do
   case "$arg" in
     --open-addcards) OPEN_FLAG="true" ;;
     --fill-sample) FILL_FLAG="true" ;;
+    --click-cog) COG_FLAG="true" ;;
   esac
 done
 
@@ -32,7 +34,9 @@ cat > "$REQ" <<JSON
   "out": "${ABS_OUT}",
   "title": "${TITLE}",
   "open_addcards": ${OPEN_FLAG},
-  "fill_sample": ${FILL_FLAG}
+  "fill_sample": ${FILL_FLAG},
+  "click_cog": ${COG_FLAG},
+  "delay_ms": 2000
 }
 JSON
 
