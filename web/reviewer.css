@@ -1,125 +1,483 @@
 /* BetterAnki — reviewer card-area chrome.
-   We don't touch card content (user note types are sacred), but we own the
+   We don't touch card content (note-type CSS is sacred), but we own the
    surrounding chrome: page background, body typography, the answer divider,
-   the top progress strip, and the small back affordance. */
+   the top header, progress strip, and the back affordance. The goal is a
+   focused reading surface — book-like, calm, centered. */
+
+:root {
+  --rf-paper: #f6f3ec;
+  --rf-ink: #1f1d18;
+  --rf-ink-dim: #6a6557;
+  --rf-ink-faint: #a39d8b;
+  --rf-line: rgba(31, 29, 24, 0.08);
+  --rf-line-2: rgba(31, 29, 24, 0.18);
+  --rf-row-hover: rgba(31, 29, 24, 0.04);
+  --rf-accent: #6c8cff;
+  --rf-sans: ui-sans-serif, -apple-system, "SF Pro Text", system-ui, sans-serif;
+  --rf-serif: ui-serif, "New York", "Hoefler Text", "Iowan Old Style", Charter, Georgia, serif;
+}
+:root[data-rf-theme="dark"],
+:root.night-mode {
+  --rf-paper: #0b0c0f;
+  --rf-ink: #eceae2;
+  --rf-ink-dim: #9b978a;
+  --rf-ink-faint: #5d5a51;
+  --rf-line: rgba(236, 234, 226, 0.08);
+  --rf-line-2: rgba(236, 234, 226, 0.18);
+  --rf-row-hover: rgba(236, 234, 226, 0.05);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-rf-theme="light"]) {
+    --rf-paper: #0b0c0f;
+    --rf-ink: #eceae2;
+    --rf-ink-dim: #9b978a;
+    --rf-ink-faint: #5d5a51;
+    --rf-line: rgba(236, 234, 226, 0.08);
+    --rf-line-2: rgba(236, 234, 226, 0.18);
+    --rf-row-hover: rgba(236, 234, 226, 0.05);
+  }
+}
 
 html, body {
-  background: var(--rf-paper, #0b0c0f) !important;
-  color: var(--rf-ink, #eceae2) !important;
-}
-/* Anki sets `<body class="card cardN">` on the reviewer. We center the
-   reading column by giving body symmetric padding via calc — wider
-   viewports get an auto-centered column at --rf-card-max-width, narrower
-   ones collapse to a 32px gutter. Doing this on body (instead of a
-   wrapper) means we don't need to modify Anki's reviewer DOM, and the
-   back-button (fixed) and progress strip (fixed) aren't affected. */
-body {
-  font-family: var(--rf-sans, ui-sans-serif, -apple-system, system-ui, sans-serif);
-  padding-top: 56px !important;
-  padding-bottom: 84px !important;
-  padding-left: max(32px, calc((100% - var(--rf-card-max-width, 720px)) / 2)) !important;
-  padding-right: max(32px, calc((100% - var(--rf-card-max-width, 720px)) / 2)) !important;
+  background: var(--rf-paper) !important;
+  background-image: none !important;
+  background-position: 0 0 !important;
+  background-attachment: scroll !important;
+  background-size: auto !important;
+  background-repeat: no-repeat !important;
+  color: var(--rf-ink) !important;
   margin: 0 !important;
-  line-height: 1.55;
+  padding: 0 !important;
+}
+
+/* Anki sets `<body class="card cardN">` on the reviewer and adds inline
+   `background-position-y: -44px` for its native fade — kill that.
+
+   We use a CSS Grid to lay out: header / card / spacer, so the card content
+   sits in a vertically-balanced reading position no matter how short it is.
+   The bottom bar lives in a separate webview so we just leave room with
+   padding-bottom. */
+body {
+  font-family: var(--rf-serif) !important;
+  min-height: 100vh !important;
+  display: grid !important;
+  grid-template-rows: auto 1fr auto !important;
+  background-position: 0 0 !important;
+  background-attachment: scroll !important;
+  background-size: auto !important;
+  background-repeat: no-repeat !important;
+  color: var(--rf-ink) !important;
   text-align: center;
-  font-size: var(--rf-card-font-size, 18px);
+  line-height: 1.5;
+  /* Honor the user's reviewer-font-size setting (small/medium/large/
+     x-large maps to 16/19/22/26 in __init__.py); default to 25 to match
+     the reviewer rebuild's reading column. */
+  font-size: var(--rf-card-font-size, 25px);
+  box-sizing: border-box;
 }
 
-/* `<body class="card">` would otherwise inherit our generic `.card` rule
-   below — make sure body never gets its own max-width / centering. */
-body.card {
-  max-width: none !important;
-}
+/* Anki's reviewer.css sets margin:20px and a hairline `hr` rule — we wipe
+   the margin (we control layout) and use our own divider. */
+body.card { max-width: none !important; }
 
-/* Generic .card rules — apply to a card wrapper if the user's template uses
-   one, but NOT to body (handled above). */
+/* Generic `.card` rules for note-type wrappers (NOT body — handled above).
+   Some templates wrap content in <div class="card">; respect the
+   reviewer-card-width / reviewer-font-size settings the user picked in
+   the Settings tab. */
 :not(body).card {
   max-width: var(--rf-card-max-width, 720px);
   margin: 0 auto;
-  font-size: var(--rf-card-font-size, 18px);
+  font-size: var(--rf-card-font-size, 25px);
   line-height: 1.55;
-  color: var(--rf-ink, #eceae2);
+  color: var(--rf-ink);
 }
 
-/* The answer divider — Anki ships <hr id=answer>. Render as a hairline
-   with a centred "ANSWER" caption that visually breaks the line. The
-   caption sits in a paper-colored chip so the line appears to interrupt
-   around it. */
-#answer {
+/* Top header band — injected via __init__.py before the card div. Carries
+   deck name (left) + count breakdown + position (right). No border under
+   it; the layout speaks for itself. */
+.ba-rv-head {
+  grid-row: 1;
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 28px 12px;
+  font: 500 12px/1 var(--rf-sans);
+  letter-spacing: 0;
+  color: var(--rf-ink-faint);
+}
+.ba-rv-head-left,
+.ba-rv-head-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.ba-rv-head-right { justify-content: flex-end; }
+.ba-rv-deck {
+  color: var(--rf-ink-dim);
+  font-weight: 600;
+  font-size: 13px;
+  max-width: 38ch;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ba-rv-type {
+  display: inline-block;
+  font: 500 11px/1 var(--rf-sans);
+  letter-spacing: 0;
+  color: var(--rf-ink-faint);
+  max-width: 18ch;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ba-rv-type[hidden] { display: none !important; }
+/* Back affordance: just the chevron. All sizing is locked with both
+   width/height AND min/max so no hover state, focus, or active state
+   can stretch the box. transform stays at none too — no scale pulses. */
+.ba-rv-back {
+  flex: 0 0 28px;
+  box-sizing: border-box;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  max-width: 28px;
+  min-height: 28px;
+  max-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
   border: 0;
-  position: relative;
-  height: 1px;
-  background: var(--rf-line, rgba(127, 127, 127, 0.18));
-  margin: 38px auto 28px;
-  max-width: var(--rf-card-max-width, 720px);
-  overflow: visible;
+  padding: 0;
+  margin: 0 -4px 0 -4px;
+  border-radius: 999px;
+  color: var(--rf-ink-faint);
+  font: 500 18px/1 var(--rf-sans);
+  letter-spacing: 0;
+  cursor: pointer;
+  transform: none;
+  transition: color 160ms ease, opacity 160ms ease;
+  opacity: 0.6;
 }
-#answer::after {
-  content: "Answer";
+.ba-rv-back:hover,
+.ba-rv-back:focus,
+.ba-rv-back:focus-visible,
+.ba-rv-back:active {
+  color: var(--rf-ink);
+  opacity: 1;
+  background: transparent;
+  outline: none;
+  box-shadow: none;
+  transform: none;
+  padding: 0;
+  width: 28px;
+  height: 28px;
+}
+.ba-rv-sep {
+  display: inline-block;
+  width: 1px;
+  height: 12px;
+  background: var(--rf-line-2);
+  margin: 0 2px;
+}
+.ba-rv-pos {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  color: var(--rf-ink-faint);
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+}
+.ba-rv-pos b {
+  color: var(--rf-ink-dim);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.ba-rv-pos span { color: var(--rf-ink-faint); font-size: 11px; }
+
+/* Header counts breakdown — three quiet "N · label" units, dot-prefixed.
+   Each pair sits on a row, vertically centered, with a faint colored dot. */
+.ba-rv-counts {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+}
+.ba-rv-count {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  font: 500 12px/1 var(--rf-sans);
+  letter-spacing: 0;
+  color: var(--rf-ink-faint);
+  position: relative;
+  padding-left: 13px;
+}
+.ba-rv-count::before {
+  content: "";
   position: absolute;
-  left: 50%;
+  left: 0;
   top: 50%;
-  transform: translate(-50%, -50%);
-  background: var(--rf-paper, #0b0c0f);
-  padding: 0 14px;
-  color: var(--rf-ink-faint, #5d5a51);
-  font: 600 9.5px/1 var(--rf-sans, system-ui, sans-serif);
-  letter-spacing: 0.3em;
-  text-transform: uppercase;
+  transform: translateY(-50%);
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.85;
+}
+.ba-rv-count b {
+  color: var(--rf-ink-dim);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  letter-spacing: 0;
+}
+.ba-rv-count i {
+  font-style: normal;
+  color: var(--rf-ink-faint);
+  letter-spacing: 0;
+}
+.ba-rv-c-new   { color: #3f7fb2; }   /* matches --rf-easy/new color slot */
+.ba-rv-c-learn { color: #c69142; }   /* learn = warm/learning */
+.ba-rv-c-due   { color: #4a8f6b; }   /* due = ready review */
+:root[data-rf-theme="dark"] .ba-rv-c-new,
+:root.night-mode .ba-rv-c-new   { color: #6fa9d8; }
+:root[data-rf-theme="dark"] .ba-rv-c-learn,
+:root.night-mode .ba-rv-c-learn { color: #d4a35d; }
+:root[data-rf-theme="dark"] .ba-rv-c-due,
+:root.night-mode .ba-rv-c-due   { color: #79b69b; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-rf-theme="light"]) .ba-rv-c-new   { color: #6fa9d8; }
+  :root:not([data-rf-theme="light"]) .ba-rv-c-learn { color: #d4a35d; }
+  :root:not([data-rf-theme="light"]) .ba-rv-c-due   { color: #79b69b; }
+}
+/* Header icon buttons (Edit, More). All sizing is locked: width, height,
+   min/max, box-sizing, padding — so hover/focus/active never resize. */
+.ba-rv-icon-btn {
+  flex: 0 0 28px;
+  box-sizing: border-box;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  max-width: 28px;
+  min-height: 28px;
+  max-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  border-radius: 7px;
+  color: var(--rf-ink-faint);
+  opacity: 0.55;
+  transform: none;
+  transition: color 160ms ease, opacity 160ms ease;
+}
+.ba-rv-icon-btn svg { width: 15px; height: 15px; display: block; }
+.ba-rv-icon-btn:hover,
+.ba-rv-icon-btn:focus,
+.ba-rv-icon-btn:focus-visible,
+.ba-rv-icon-btn:active {
+  color: var(--rf-ink);
+  opacity: 1;
+  background: transparent;
+  outline: none;
+  box-shadow: none;
+  transform: none;
+  padding: 0;
+  width: 28px;
+  height: 28px;
+}
+.ba-rv-icon-btn[hidden] { display: none !important; }
+
+/* Ease key colours — used by the ease selector below the answer. */
+:root {
+  --rf-again: #c95a4b;
+  --rf-hard:  #c69142;
+  --rf-good:  #4a8f6b;
+  --rf-easy:  #3f7fb2;
+}
+:root[data-rf-theme="dark"], :root.night-mode {
+  --rf-again: #e07466;
+  --rf-hard:  #d4a35d;
+  --rf-good:  #79b69b;
+  --rf-easy:  #6fa9d8;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-rf-theme="light"]) {
+    --rf-again: #e07466;
+    --rf-hard:  #d4a35d;
+    --rf-good:  #79b69b;
+    --rf-easy:  #6fa9d8;
+  }
 }
 
-/* Progress strip across the top — accent only. No floating "X/Y" label. */
+/* The ease selector — four colored interval words. No numbers, no labels,
+   no bar. Just typography you click. The default key is heavier weight
+   and full opacity, with NO animation (per user feedback: don't make the
+   default attract attention, that's distracting). */
+.ba-rv-ease {
+  grid-row: 3;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;       /* small gap; each key carries its own roomy padding */
+  padding: 16px 32px 24px;
+  margin: 0 auto;
+  width: 100%;
+  max-width: var(--rf-card-max-width, 680px);
+  box-sizing: border-box;
+  font-variant-numeric: tabular-nums;
+}
+.ba-rv-ease[hidden] { display: none !important; }
+
+/* Each ease key has a generous padding that becomes the click hit area,
+   and on hover a soft background paints that area in. The text inside is
+   centered and never changes size, weight, or position on hover. The
+   default (data-default) stays heavier; that's the only thing that
+   distinguishes it idle. */
+.ba-rv-ease-key,
+.ba-rv-ease-key:hover,
+.ba-rv-ease-key:focus,
+.ba-rv-ease-key:focus-visible,
+.ba-rv-ease-key:active {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  border: 0 !important;
+  outline: none !important;
+  box-shadow: none !important;
+  text-decoration: none !important;
+}
+.ba-rv-ease-key {
+  /* Roomy padding = bigger click target. Visual text remains the same. */
+  padding: 14px 28px;
+  margin: 0;
+  cursor: pointer;
+  font: 500 14px/1 var(--rf-sans);
+  letter-spacing: 0;
+  color: var(--ba-key, var(--rf-ink-faint));
+  background: transparent;
+  border-radius: 10px;
+  opacity: 0.8;
+  /* Only color these on hover — no transform, no padding change. */
+  transition: background-color 160ms ease, opacity 160ms ease;
+}
+.ba-rv-ease-key[hidden] { display: none !important; }
+.ba-rv-ease-key:hover {
+  /* Significant: a real surface appears so the user sees the click area.
+     We don't touch font/weight/transform, so the text doesn't move. */
+  background: color-mix(in oklab, var(--ba-key, var(--rf-ink-faint)) 12%, transparent);
+  opacity: 1;
+}
+.ba-rv-ease-1 { --ba-key: var(--rf-again); }
+.ba-rv-ease-2 { --ba-key: var(--rf-hard); }
+.ba-rv-ease-3 { --ba-key: var(--rf-good); }
+.ba-rv-ease-4 { --ba-key: var(--rf-easy); }
+.ba-rv-ease-key[data-default] { font-weight: 700; opacity: 1; }
+
+/* Card content sits in the second grid row. We anchor it at a stable Y
+   (28% from the top of the available space) so revealing the answer
+   below the question never *moves* the question. */
+#qa {
+  grid-row: 2;
+  display: flex !important;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: center;
+  padding: max(96px, 18vh) 32px 64px;
+  width: 100%;
+  max-width: var(--rf-card-max-width, 680px);
+  margin: 0 auto;
+  box-sizing: border-box;
+  min-height: 0;
+  font-size: var(--rf-card-font-size, 25px);
+  line-height: 1.5;
+  letter-spacing: -0.005em;
+  overflow-y: auto;
+}
+
+/* The card content itself is rendered as-is (note-type CSS wins). We just
+   give it a comfortable reading column so long answers wrap kindly, AND
+   we promote the inherited size so default note-types feel substantial. */
+#qa > * { max-width: 100%; }
+.card {
+  color: var(--rf-ink) !important;
+  background: transparent !important;
+  /* Override note-type's 20px default with the user's chosen size from
+     Settings (reviewer_font_size). Default 25 keeps the rebuild look. */
+  font-size: var(--rf-card-font-size, 25px) !important;
+}
+
+/* The answer divider — a quiet hairline, no caption. Anki's internal
+   reviewer.css sets a thick #737373 bar on every `hr`; this overrides. */
+#qa hr#answer,
+hr#answer {
+  all: unset;
+  display: block;
+  height: 1px;
+  background: var(--rf-line-2) !important;
+  margin: 32px auto 28px;
+  width: 100%;
+  max-width: 320px;
+}
+/* Any other `<hr>` inside the card should respect our hairline, not the
+   default 1em-margin #737373 slab from Anki's reviewer.css. */
+#qa hr {
+  background: var(--rf-line) !important;
+  height: 1px !important;
+  border: 0 !important;
+  margin: 18px auto !important;
+}
+
+/* The answer reveal — a soft fade + 4px slide. Fast (220ms), no easing
+   that lingers. The question above doesn't move because the wrap sits
+   below it in normal flow; only `.ba-rv-answer` animates. */
+.ba-rv-answer {
+  animation: ba-rv-reveal 220ms cubic-bezier(.2, .7, .2, 1) both;
+}
+@keyframes ba-rv-reveal {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ba-rv-answer { animation: none; }
+}
+
+/* Progress strip across the top, hairline above the header. Slightly
+   thicker so the fill reads as an actual "you are X% through this session"
+   indicator and not a stray pixel.
+
+   We also reserve the same height as a faint backdrop so the strip is
+   present even at 0% — empty isn't surprising, you see the channel. */
 #reforge-progress {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   height: 3px;
-  background: var(--rf-line, rgba(255, 255, 255, 0.06));
+  background: var(--rf-line);
   z-index: 9999;
   pointer-events: none;
 }
 #reforge-progress-fill {
   height: 100%;
   width: 0%;
-  background: var(--rf-accent, #6c8cff);
-  transition: width 220ms cubic-bezier(.2, .7, .2, 1);
+  background: var(--rf-accent);
+  transition: width 280ms cubic-bezier(.2, .7, .2, 1);
 }
-/* The progress-remaining text was visually noisy + redundant with the
-   counts in the bottom bar. Hide it. */
 #reforge-progress-label { display: none !important; }
 
-/* Back-to-decks affordance — small chevron + "Decks" always visible. Stable
-   geometry (no width changes) so hover never feels jumpy. Only color +
-   opacity respond to hover. */
+/* Legacy back button (still used on non-injected views as a fallback).
+   In the new layout the header carries the back link. */
 .ba-back {
   position: fixed !important;
   top: 12px !important;
   left: 16px !important;
   z-index: 200 !important;
-  display: inline-flex !important;
-  align-items: center;
-  gap: 6px;
-  background: transparent !important;
-  border: 0 !important;
-  padding: 7px 12px 7px 8px !important;
-  border-radius: 999px !important;
-  font: 500 11.5px/1 var(--rf-sans, system-ui, sans-serif) !important;
-  letter-spacing: 0.04em !important;
-  color: var(--rf-ink-faint, #5d5a51) !important;
-  cursor: pointer !important;
-  opacity: 0.55 !important;
-  transition: opacity 180ms ease, color 180ms ease, background 180ms ease !important;
-}
-.ba-back::before {
-  content: "‹";
-  font-size: 18px;
-  line-height: 1;
-  font-weight: 400;
-  margin-right: 1px;
-}
-.ba-back:hover {
-  opacity: 1 !important;
-  color: var(--rf-ink, #eceae2) !important;
-  background: var(--rf-row-hover, rgba(127, 127, 127, 0.06)) !important;
+  display: none !important;  /* superseded by .ba-rv-back in the header */
 }
