@@ -99,3 +99,48 @@
 .ad-menu .ad-menu-item.ad-menu-danger:focus-visible .ad-menu-icon {
   color: #c84431;
 }
+
+/* Inline deck rename — see web/deckopts.js → startInlineRename. The
+   <input> sits where `a.deck` would, and inherits the same type metrics
+   so the row doesn't shift when we swap in the editor. Anki's `.fancy
+   input` rule paints native chrome on every input, so we have to be
+   explicit about stripping border/background/padding. */
+.ba-home input.ad-deck-rename,
+.ba-home input.ad-deck-rename:focus {
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: middle;
+  color: var(--rf-ink) !important;
+  font: 500 16px/1.25 var(--rf-serif) !important;
+  letter-spacing: -0.005em;
+  background: transparent !important;
+  border: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  -webkit-appearance: none;
+  appearance: none;
+  caret-color: var(--rf-ink-strong, var(--rf-ink));
+}
+.ba-home input.ad-deck-rename.filtered {
+  color: var(--rf-accent, #6c8cff) !important;
+  font-style: italic;
+}
+.ba-home input.ad-deck-rename:disabled {
+  opacity: 0.6;
+}
+/* Hero variant — the home page shows an `<h1 class="ba-deck-name">` when a
+   user has just one deck. The inline editor sitting in its place needs
+   the hero type metrics (42px serif, tighter tracking), not the row's
+   16px metrics that inherit from `.ba-home a.deck`. */
+.ba-home input.ad-deck-rename--hero,
+.ba-home input.ad-deck-rename--hero:focus {
+  font: 500 42px/1 var(--rf-serif) !important;
+  letter-spacing: -0.025em;
+  color: var(--rf-ink) !important;
+}
+@media (max-width: 480px) {
+  .ba-home input.ad-deck-rename--hero { font-size: 17px !important; }
+}
