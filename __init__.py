@@ -175,15 +175,22 @@ def on_webview_will_set_content(web_content: WebContent, context: Optional[Any])
     # Reviewer geometry — variables surface in reviewer.css.
     width_map = {"narrow": "640px", "medium": "780px", "wide": "920px",
                  "full": "100%"}
-    # Sizes tuned for the reviewer rebuild's reading column. "medium" matches
-    # the 25px the rebuild was designed against (see reviewer.css comment).
-    fontsize_map = {"small": "20px", "medium": "25px", "large": "30px",
-                    "x-large": "36px"}
+    # Sizes tuned for the reviewer rebuild's reading column.
+    fontsize_map = {"small": "22px", "medium": "28px", "large": "34px",
+                    "x-large": "40px"}
+    # Chrome (header + bottom buttons) scales with the same setting so the
+    # whole reviewer surface grows together. Multipliers track the card
+    # font-size ratios above (22/28/34/40 → 0.85/1.0/1.25/1.5) so chrome
+    # grows enough to stay in proportion with the larger card text.
+    chrome_scale_map = {"small": "0.85", "medium": "1", "large": "1.25",
+                        "x-large": "1.5"}
     card_width = width_map.get(card_width_choice, "780px")
-    card_font_size = fontsize_map.get(font_size_choice, "25px")
+    card_font_size = fontsize_map.get(font_size_choice, "28px")
+    chrome_scale = chrome_scale_map.get(font_size_choice, "1")
     reviewer_decl = (
         f"--rf-card-max-width:{card_width};"
         f"--rf-card-font-size:{card_font_size};"
+        f"--rf-chrome-scale:{chrome_scale};"
     )
 
     # Heatmap palette — emits its own rule block (light + dark variants),
@@ -1582,13 +1589,9 @@ def _current_card_type() -> str:
 
 def _reviewer_header_html() -> str:
     """Header above the card: back chevron + deck name on the left, the
-    count breakdown + position on the right, and Edit + More icon buttons
-    next to them (Anki's More menu already covers flag/mark/undo)."""
+    count breakdown on the right, and Edit + More icon buttons next to
+    them (Anki's More menu already covers flag/mark/undo)."""
     name = html.escape(_current_deck_name() or "Studying")
-    rem = _remaining()
-    total = _session["total"] or rem or 1
-    done = max(0, total - rem)
-    pos = min(done + 1, total)
     new_n = learn_n = rev_n = 0
     try:
         c = mw.col.sched.counts()
@@ -1626,12 +1629,6 @@ def _reviewer_header_html() -> str:
                 title="Cards in learning"><b id="ba-rv-c-learn">{learn_n}</b><i>learn</i></span>
           <span class="ba-rv-count ba-rv-c-due"
                 title="Review cards due today"><b id="ba-rv-c-due">{rev_n}</b><i>due</i></span>
-        </span>
-        <span class="ba-rv-sep" aria-hidden="true"></span>
-        <span class="ba-rv-pos">
-          <b id="ba-rv-pos-now">{pos}</b>
-          <span>of</span>
-          <b id="ba-rv-pos-total">{total}</b>
         </span>
         <button class="ba-rv-icon-btn" type="button"
                 onclick="pycmd('edit')" title="Edit card (E)"
@@ -1673,7 +1670,6 @@ def _push_progress() -> None:
     total = _session["total"] or 1
     done = max(0, total - rem)
     pct = min(100, int(done * 100 / total))
-    pos = min(done + 1, total)
     new_n = learn_n = rev_n = 0
     try:
         c = mw.col.sched.counts()
@@ -1692,8 +1688,6 @@ def _push_progress() -> None:
         mw.reviewer.web.eval(
             f"window.__reforgeProgress && window.__reforgeProgress({pct},{done},{rem});"
             f"var $=function(id){{return document.getElementById(id);}};"
-            f"var n=$('ba-rv-pos-now'),t=$('ba-rv-pos-total');"
-            f"if(n)n.textContent={pos};if(t)t.textContent={total};"
             f"var cn=$('ba-rv-c-new'),cl=$('ba-rv-c-learn'),cd=$('ba-rv-c-due');"
             f"if(cn)cn.textContent={new_n};if(cl)cl.textContent={learn_n};"
             f"if(cd)cd.textContent={rev_n};"
