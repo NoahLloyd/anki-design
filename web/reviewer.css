@@ -118,6 +118,11 @@ body.card { max-width: none !important; }
   color: var(--rf-ink-dim);
   font-weight: 600;
   font-size: calc(13px * var(--rf-chrome-scale, 1));
+  /* line-height inherits 1 from .ba-rv-head — too tight to clear descenders
+     when overflow: hidden clips at the content box. 1.4 leaves room for
+     g/p/y to render fully without changing the header's visual height
+     (the 28px icon buttons still dominate the row). */
+  line-height: 1.4;
   max-width: 38ch;
   overflow: hidden;
   white-space: nowrap;
@@ -125,7 +130,7 @@ body.card { max-width: none !important; }
 }
 .ba-rv-type {
   display: inline-block;
-  font: 500 11px/1 var(--rf-sans);
+  font: 500 11px/1.4 var(--rf-sans);
   font-size: calc(11px * var(--rf-chrome-scale, 1));
   letter-spacing: 0;
   color: var(--rf-ink-faint);
