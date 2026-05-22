@@ -956,16 +956,19 @@ def _on_js_message(handled, message, context):
                 return handled
         elif cmd.startswith("deck:"):
             # Items from our custom deck-options menu (web/deckopts.js).
-            # Format: deck:<action>:<did>
-            parts = cmd.split(":", 2)
-            if len(parts) != 3 or not parts[2].isdigit():
+            # Format: deck:<action>:<did>[:<arg>]
+            parts = cmd.split(":", 3)
+            if len(parts) < 3 or not parts[2].isdigit():
                 return handled
             action = parts[1]
             did = int(parts[2])
+            extra = parts[3] if len(parts) >= 4 else None
             db = getattr(mw, "deckBrowser", None)
             try:
                 if action == "rename" and db is not None:
                     db._rename(did)  # type: ignore[attr-defined]
+                elif action == "rename-to" and extra is not None:
+                    _rename_deck_inline(did, extra)
                 elif action == "options":
                     try:
                         from aqt.deckoptions import display_options_for_deck_id
@@ -1045,6 +1048,41 @@ def _create_deck_inline(name: str) -> None:
         pass
 
 
+def _rename_deck_inline(did: int, encoded_leaf: str) -> None:
+    """Apply an inline rename from the home page row. The user edits only
+    the leaf segment, so we preserve any parent prefix and replace the
+    last `::`-separated component with what they typed.
+
+    If they typed `::` themselves, that path becomes the new tail — so
+    `A::B::C` edited to `X::Y` becomes `A::B::X::Y`. Empty/unchanged
+    inputs are no-ops."""
+    try:
+        from urllib.parse import unquote
+        new_leaf = unquote(encoded_leaf or "").strip()
+    except Exception:
+        return
+    if not new_leaf:
+        return
+    try:
+        current = mw.col.decks.name(did)
+    except Exception:
+        return
+    if not current:
+        return
+    parent_parts = current.split("::")[:-1]
+    new_full = "::".join(parent_parts + [new_leaf]) if parent_parts else new_leaf
+    if new_full == current:
+        return
+    try:
+        from aqt.operations.deck import rename_deck
+        from anki.decks import DeckId
+        rename_deck(
+            parent=mw, deck_id=DeckId(did), new_name=new_full,
+        ).run_in_background()
+    except Exception:
+        pass
+
+
 def _start_studying(did: int) -> None:
     """Select a deck and go straight into the reviewer."""
     try:
@@ -1105,7 +1143,7 @@ def _single_deck_hero() -> str:
         # to reach in single-deck mode since the deck row is hidden).
         return f"""
         <header class="ba-deck-head ba-rise">
-          <h1 class="ba-deck-name">{name}</h1>
+          <h1 class="ba-deck-name" data-did="{did}">{name}</h1>
           <button class="ba-deck-opts"
                   onclick="window.__adDeckOpts({did}, event)"
                   title="Deck options" aria-label="Deck options">
@@ -2303,6 +2341,15 @@ def _dev_screenshot(request_path: str) -> None:
                             break
                     except Exception:
                         continue
+            except Exception:
+                pass
+        run_js = req.get("run_js")
+        if run_js:
+            try:
+                web = getattr(mw, "web", None)
+                if web is not None:
+                    web.eval(str(run_js))
+                    QApplication.processEvents()
             except Exception:
                 pass
 
