@@ -836,6 +836,37 @@ def _on_js_message(handled, message, context):
             except Exception:
                 pass
             return (True, None)
+        if cmd.startswith("edit-save:"):
+            payload = cmd[len("edit-save:"):]
+            try:
+                from . import editreviewer
+                editreviewer.handle_edit_save(payload)
+            except Exception:
+                pass
+            return (True, None)
+        if cmd.startswith("edit-full"):
+            # Either "edit-full" (no payload) or "edit-full:<json>".
+            payload = ""
+            if cmd.startswith("edit-full:"):
+                payload = cmd[len("edit-full:"):]
+            try:
+                from . import editreviewer
+                editreviewer.handle_edit_full(payload)
+            except Exception:
+                pass
+            return (True, None)
+        if cmd.startswith("edit-state:"):
+            # JS enter/exit signal — toggles whether the reviewer's Qt
+            # shortcuts are active. While editing they're disabled so the
+            # user can type normally (including letters like e/m, plus
+            # ⌘+Backspace which Anki normally maps to delete-note).
+            on = cmd[len("edit-state:"):] == "on"
+            try:
+                from . import editreviewer
+                editreviewer.set_edit_active(on)
+            except Exception:
+                pass
+            return (True, None)
         if cmd == "decks":
             # If we're in any embedded view (Add, Browse, Stats,
             # Settings), close it first so the deck browser becomes
@@ -2024,6 +2055,17 @@ try:
 except Exception as _e:
     try:
         print(f"[anki-design] addcard register failed: {_e}", flush=True)
+    except Exception:
+        pass
+
+
+# Inline reviewer editing — replaces the EditCurrent dialog.
+try:
+    from . import editreviewer as _editreviewer
+    _editreviewer.register()
+except Exception as _e:
+    try:
+        print(f"[anki-design] editreviewer register failed: {_e}", flush=True)
     except Exception:
         pass
 

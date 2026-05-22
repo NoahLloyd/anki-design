@@ -481,3 +481,187 @@ hr#answer {
   z-index: 200 !important;
   display: none !important;  /* superseded by .ba-rv-back in the header */
 }
+
+/* ---------------------------------------------------------------------- *
+ * Inline edit mode
+ *
+ * The field spans (server-side wrap of {{Field}} renderings) carry
+ * `[data-ba-field="Name"]` and the .ba-rv-field class. In idle reviewer
+ * state we leave them invisible — the underlying note-type CSS keeps the
+ * card looking exactly as it did before our wrap. Edit mode flips
+ * `body.ba-editing`, which:
+ *   • outlines each editable span with a soft hairline + paper-tinted fill
+ *   • turns the caret on, draws a focus halo
+ *   • hides the ease selector (no rating mid-edit)
+ *   • shows the floating toolbar at the bottom
+ * ---------------------------------------------------------------------- */
+
+/* Invisible by default — the wrap is just a marker. The reviewer renders
+   exactly as-is until edit mode flips on. We use a <div> wrap (not span)
+   so Anki's webview.js Backspace filter accepts the contenteditable as a
+   real editable target; `display: inline` keeps the layout unchanged. */
+.ba-rv-field {
+  display: inline;
+  transition: text-decoration-color 160ms ease;
+}
+
+/* While editing, ease selector + click-to-reveal go away. */
+body.ba-editing .ba-rv-ease { display: none !important; }
+body.ba-editing #qa { cursor: text; }
+
+/* Editing affordance: the text stays exactly where it sat in idle render
+   (no boxes, no fills, no padding shift). A single dashed underline is the
+   only persistent cue that something is editable; it turns solid + accent-
+   coloured when the field has the caret, so the user can always tell which
+   one they're typing into. */
+body.ba-editing .ba-rv-field {
+  cursor: text;
+  caret-color: var(--rf-accent);
+  text-decoration: underline dashed var(--rf-ink-faint);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 6px;
+  outline: none;
+}
+body.ba-editing .ba-rv-field:hover {
+  text-decoration-color: var(--rf-ink-dim);
+}
+body.ba-editing .ba-rv-field:focus {
+  outline: none;
+  text-decoration: underline solid var(--rf-accent);
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 6px;
+}
+
+/* Floating toolbar — pinned to the bottom of the viewport, centered. It
+   rises into view when ba-edit-bar--open is added (in tandem with
+   body.ba-editing) and stays out of the way of the rest of the chrome. */
+#ba-edit-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 20px;
+  transform: translate(-50%, 8px);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 7px 10px 7px 12px;
+  background: var(--rf-paper);
+  border: 1px solid var(--rf-line-2);
+  border-radius: 12px;
+  box-shadow: 0 12px 28px -10px rgba(0, 0, 0, 0.22),
+              0 1px 2px rgba(0, 0, 0, 0.06);
+  font-family: var(--rf-sans);
+  font-size: 13px;
+  color: var(--rf-ink);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 10000;
+  transition: opacity 180ms ease, transform 220ms cubic-bezier(.2,.7,.2,1);
+}
+#ba-edit-bar.ba-edit-bar--open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(-50%, 0);
+}
+:root[data-rf-theme="dark"] #ba-edit-bar,
+:root.night-mode #ba-edit-bar {
+  background: color-mix(in oklab, var(--rf-paper) 88%, var(--rf-ink) 12%);
+  box-shadow: 0 12px 28px -10px rgba(0, 0, 0, 0.55),
+              0 1px 2px rgba(0, 0, 0, 0.30);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-rf-theme="light"]) #ba-edit-bar {
+    background: color-mix(in oklab, var(--rf-paper) 88%, var(--rf-ink) 12%);
+    box-shadow: 0 12px 28px -10px rgba(0, 0, 0, 0.55),
+                0 1px 2px rgba(0, 0, 0, 0.30);
+  }
+}
+
+/* Formatting cluster on the left — small monospaced-ish initials. */
+.ba-edit-fmt {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.ba-edit-fmt button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--rf-ink-dim);
+  font-family: var(--rf-sans);
+  font-size: 13px;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  padding: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 140ms ease, background-color 140ms ease;
+}
+.ba-edit-fmt button b,
+.ba-edit-fmt button i,
+.ba-edit-fmt button u { font-style: normal; font-weight: 600; }
+.ba-edit-fmt button b { font-weight: 700; }
+.ba-edit-fmt button i { font-style: italic; font-weight: 500; }
+.ba-edit-fmt button u { text-decoration: underline; font-weight: 500; }
+.ba-edit-fmt button:hover {
+  color: var(--rf-ink);
+  background: var(--rf-row-hover);
+}
+.ba-edit-fmt button:active {
+  background: color-mix(in oklab, var(--rf-ink) 8%, transparent);
+}
+/* Actions cluster on the right. */
+.ba-edit-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 6px;
+  border-left: 1px solid var(--rf-line);
+}
+.ba-edit-actions button {
+  appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--rf-ink-dim);
+  font-family: var(--rf-sans);
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: 0;
+  padding: 6px 12px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: color 140ms ease, background-color 140ms ease,
+              border-color 140ms ease;
+}
+.ba-edit-actions button:hover {
+  color: var(--rf-ink);
+  background: var(--rf-row-hover);
+}
+.ba-edit-actions .ba-edit-link {
+  color: var(--rf-ink-faint);
+  text-decoration: none;
+  padding: 6px 6px;
+}
+.ba-edit-actions .ba-edit-link:hover {
+  color: var(--rf-ink-dim);
+  background: transparent;
+}
+.ba-edit-actions .ba-edit-primary {
+  color: var(--rf-paper);
+  background: var(--rf-ink);
+  border-color: var(--rf-ink);
+  font-weight: 600;
+}
+.ba-edit-actions .ba-edit-primary:hover {
+  background: var(--rf-ink-dim);
+  border-color: var(--rf-ink-dim);
+  color: var(--rf-paper);
+}
+
+/* When edit mode is active, dim everything outside the card area so the
+   eye lands on the editable fields. We dim the header lightly — it's
+   still useful context (deck name, position) but shouldn't compete. */
+body.ba-editing .ba-rv-head { opacity: 0.55; }
+body.ba-editing .ba-rv-head .ba-rv-icon-btn { pointer-events: none; }
