@@ -31,9 +31,12 @@ from aqt.qt import (
     QColor,
     QEvent,
     QFrame,
+    QHBoxLayout,
     QKeySequence,
+    QLabel,
     QObject,
     QPalette,
+    QPushButton,
     QShortcut,
     Qt,
     QTimer,
@@ -42,6 +45,117 @@ from aqt.qt import (
 
 
 SIDEBAR_W = 264  # px — matches --rf-side-w in web/theme.css; same as the other embeds
+
+
+SERIF = '"New York", "Hoefler Text", "Iowan Old Style", Charter, Georgia, serif'
+SANS = '"SF Pro Text", "Helvetica Neue", "Segoe UI", system-ui, sans-serif'
+
+
+def _chrome_qss(palette: dict, accent: str) -> str:
+    """QSS for the dialog chrome (everything outside the graphs webview).
+
+    The graphs webview itself gets its own CSS injection via
+    `webview_did_inject_style_into_page` in __init__.py so its fonts and
+    colors line up with the rest of the redesigned UI."""
+    return f"""
+QDialog, QFrame#ba-stats-embed {{
+    background: {palette['paper']};
+    color: {palette['ink']};
+    font-family: {SANS};
+}}
+
+/* Top header strip — "Statistics" title + the deck chooser inline. */
+QFrame#ba-stats-header {{
+    background: {palette['paper']};
+}}
+QLabel#ba-stats-title {{
+    color: {palette['ink']};
+    font-family: {SERIF};
+    font-size: 22pt;
+    font-weight: 500;
+    letter-spacing: -0.4px;
+    padding: 0;
+    background: transparent;
+}}
+QLabel#ba-stats-eyebrow {{
+    color: {palette['ink_faint']};
+    font-family: {SANS};
+    font-size: 8.5pt;
+    font-weight: 600;
+    letter-spacing: 1.8px;
+    text-transform: uppercase;
+    padding: 0;
+    background: transparent;
+}}
+
+/* The bottom strip (deck chooser + Save PDF / Close). */
+QDialog QWidget#deckArea, QWidget#deckArea {{
+    background: transparent;
+}}
+#deckArea QLabel {{
+    color: {palette['ink_faint']};
+    font-family: {SANS};
+    font-size: 9.5pt;
+    background: transparent;
+}}
+#deckArea QPushButton {{
+    background: transparent;
+    border: 1px solid {palette['line2']};
+    border-radius: 6px;
+    color: {palette['ink']};
+    font-family: {SANS};
+    font-size: 10.5pt;
+    font-weight: 500;
+    padding: 5px 12px;
+    min-height: 16px;
+    text-decoration: none;
+}}
+#deckArea QPushButton:hover {{
+    color: {accent};
+    background: {palette['hover']};
+    border-color: {palette['ink_faint']};
+}}
+#deckArea QPushButton:focus {{
+    outline: none;
+    border-color: {accent};
+    color: {accent};
+}}
+
+QDialogButtonBox {{
+    background: transparent;
+}}
+QDialogButtonBox QPushButton {{
+    background: transparent;
+    border: 1px solid {palette['line2']};
+    border-radius: 6px;
+    color: {palette['ink_dim']};
+    font-family: {SANS};
+    font-size: 10pt;
+    font-weight: 500;
+    padding: 6px 16px;
+    min-width: 86px;
+    min-height: 18px;
+}}
+QDialogButtonBox QPushButton:hover {{
+    color: {palette['ink']};
+    background: {palette['hover']};
+    border-color: {palette['ink_faint']};
+}}
+QDialogButtonBox QPushButton:focus {{
+    outline: none;
+    border-color: {accent};
+    color: {palette['ink']};
+}}
+QDialogButtonBox QPushButton:default {{
+    background: {palette['ink']};
+    color: {palette['paper']};
+    border-color: {palette['ink']};
+}}
+QDialogButtonBox QPushButton:default:hover {{
+    background: {palette['ink_dim']};
+    border-color: {palette['ink_dim']};
+}}
+"""
 
 
 class _EmbedFilter(QObject):
@@ -222,6 +336,9 @@ def open_inline(parent_mw: Any = None) -> None:
         except Exception:
             pass
 
+        cfg = _addcard._config()
+        accent = cfg.get("accent", "#6c8cff")
+
         overlay = QFrame(parent_mw.form.centralwidget)
         overlay.setObjectName("ba-stats-embed")
         overlay.setAutoFillBackground(True)
@@ -229,13 +346,40 @@ def open_inline(parent_mw: Any = None) -> None:
         _ov_pal.setColor(QPalette.ColorRole.Window, paper_qc)
         overlay.setPalette(_ov_pal)
         overlay.setStyleSheet(
-            "QFrame#ba-stats-embed { background: " + palette["paper"] + "; "
-            "border-left: 1px solid " + palette["line"] + "; }"
+            _chrome_qss(palette, accent)
+            + "\nQFrame#ba-stats-embed { border-left: 1px solid "
+            + palette["line"] + "; }"
         )
 
         v = QVBoxLayout(overlay)
         v.setContentsMargins(0, 0, 0, 0)
         v.setSpacing(0)
+
+        # Top header strip — eyebrow "STATISTICS" label over a serif title
+        # echoing the deck name. The title text is filled in once the deck
+        # chooser reports the current deck. Mirrors the editorial tone of
+        # the deck-browser/homepage header.
+        header = QFrame(overlay)
+        header.setObjectName("ba-stats-header")
+        header.setAutoFillBackground(True)
+        _hd_pal = header.palette()
+        _hd_pal.setColor(QPalette.ColorRole.Window, paper_qc)
+        header.setPalette(_hd_pal)
+        hl = QHBoxLayout(header)
+        hl.setContentsMargins(40, 28, 40, 22)
+        hl.setSpacing(0)
+
+        title_col = QVBoxLayout()
+        title_col.setContentsMargins(0, 0, 0, 0)
+        title_col.setSpacing(6)
+        eyebrow = QLabel("STATISTICS", header)
+        eyebrow.setObjectName("ba-stats-eyebrow")
+        title_col.addWidget(eyebrow)
+        title = QLabel("Your progress", header)
+        title.setObjectName("ba-stats-title")
+        title_col.addWidget(title)
+        hl.addLayout(title_col, 1)
+        v.addWidget(header)
 
         # Reparent the WHOLE dialog as an embedded widget. Everything the
         # form put on it (web, deck chooser, button box) and anything
@@ -245,6 +389,66 @@ def open_inline(parent_mw: Any = None) -> None:
         sd.setWindowFlags(Qt.WindowType.Widget)
         sd.setVisible(True)
         v.addWidget(sd, 1)
+
+        # Mirror the active deck name into the header title.
+        # `DeckChooser.selected_deck_name()` is the canonical accessor;
+        # we fall back to the chooser's button text if Anki's API moves.
+        def _refresh_title() -> None:
+            try:
+                name = ""
+                dc = getattr(sd, "deck_chooser", None)
+                if dc is not None:
+                    try:
+                        name = dc.selected_deck_name() or ""
+                    except Exception:
+                        name = ""
+                if not name:
+                    try:
+                        btn = sd.form.deckArea.findChild(QPushButton)
+                        if btn is not None:
+                            name = btn.text() or ""
+                    except Exception:
+                        pass
+                # The button label escapes ampersands as "&&" for Qt
+                # mnemonics — undo so the title reads naturally.
+                name = name.replace("&&", "&").strip()
+                title.setText(name or "Your progress")
+            except Exception:
+                pass
+
+        _refresh_title()
+        try:
+            dc = getattr(sd, "deck_chooser", None)
+            if dc is not None and hasattr(dc, "on_deck_changed"):
+                _orig_changed = dc.on_deck_changed
+                def _wrapped_deck_changed(deck_id, _orig=_orig_changed):
+                    try:
+                        _orig(deck_id)
+                    finally:
+                        QTimer.singleShot(0, _refresh_title)
+                dc.on_deck_changed = _wrapped_deck_changed  # type: ignore[assignment]
+        except Exception:
+            pass
+
+        # The DeckChooser auto-prepends a "Deck:" QLabel — hide it; the
+        # title up top already names what the user is looking at.
+        try:
+            da = sd.form.deckArea
+            for child in da.findChildren(QLabel):
+                child.hide()
+                break
+        except Exception:
+            pass
+
+        # The bottom strip (deck chooser + button box) defaults to a
+        # tight (16, 6, 16, 6) margin set in stats_qt6.py — bump it so
+        # the controls feel like part of an editorial layout, not a
+        # crammed dialog footer.
+        try:
+            sd.form.horizontalLayout_3.setContentsMargins(40, 16, 40, 18)
+            sd.form.horizontalLayout_3.setSpacing(14)
+        except Exception:
+            pass
 
         # Hijack the Close button (buttonBox.rejected normally routes to
         # NewDeckStats.reject) so clicking Close tears the embed down
