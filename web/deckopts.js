@@ -101,11 +101,110 @@
         e.stopPropagation();
         var cmd = btn.getAttribute("data-cmd");
         close();
+        // Rename happens inline on the home-page row when possible.
+        // Falls back to the native dialog (handled by Python) if the
+        // row isn't visible — e.g., we're on the overview header.
+        if (cmd === "rename" && startInlineRename(did)) return;
         send("deck:" + cmd + ":" + did);
       });
     });
 
     return menu;
+  }
+
+  /* Inline rename — swap the deck-name anchor with a real <input> styled
+     identically so the row visually doesn't change. Enter submits via
+     pycmd; Escape or empty/unchanged blur restores the anchor. Exposed
+     as `window.__adStartDeckRename` for keyboard / programmatic entry
+     points (e.g., from a F2 shortcut or screenshot harness).
+
+     We use a native <input>, not contenteditable: Qt WebEngine's editing
+     commands on contenteditable have unpredictable interactions with
+     Anki's top-level shortcuts (Backspace, etc.), whereas <input>'s
+     keyboard handling is rock-solid because the browser owns it. */
+  window.__adStartDeckRename = startInlineRename;
+  function startInlineRename(did) {
+    // Two entry points share this flow: the deck row in the multi-deck
+    // table (`a.deck` inside `tr.deck`) and the single-deck hero header
+    // (`h1.ba-deck-name`). The latter is tagged with `data-did` so we can
+    // pick the right one. The hero header is checked first because in
+    // single-deck mode Anki still renders the (hidden) `tr.deck` row in
+    // the DOM, and we want to edit the visible name, not the hidden one.
+    var anchor = document.querySelector('h1.ba-deck-name[data-did="' + did + '"]');
+    if (anchor && anchor.offsetParent === null) anchor = null;
+    if (!anchor) {
+      anchor = document.querySelector('tr.deck[id="' + did + '"] td.decktd > a.deck');
+      if (anchor && anchor.offsetParent === null) anchor = null;
+    }
+    if (!anchor) return false;
+    if (anchor.parentNode.querySelector(".ad-deck-rename")) return true; // editing
+
+    var original = anchor.textContent;
+    var input = document.createElement("input");
+    input.type = "text";
+    input.className = "ad-deck-rename";
+    if (anchor.tagName && anchor.tagName.toLowerCase() === "h1") {
+      input.classList.add("ad-deck-rename--hero");
+    }
+    if (anchor.classList.contains("filtered")) input.classList.add("filtered");
+    input.spellcheck = false;
+    input.setAttribute("aria-label", "Rename deck");
+    input.value = original;
+    // Auto-size to the current text so the field hugs the name like the
+    // anchor did. `size` is in `ch`; bump by a couple so the caret has
+    // breathing room and the field doesn't visibly grow as you type.
+    function autosize() {
+      input.size = Math.max((input.value || "").length + 2, 4);
+    }
+    autosize();
+    input.addEventListener("input", autosize);
+
+    anchor.style.display = "none";
+    anchor.parentNode.insertBefore(input, anchor.nextSibling);
+
+    // Prevent the row's open-deck click handler from firing while editing.
+    input.addEventListener("mousedown", function (e) { e.stopPropagation(); });
+    input.addEventListener("click", function (e) { e.stopPropagation(); });
+
+    var done = false;
+    function cancel() {
+      if (done) return;
+      done = true;
+      if (input.parentNode) input.parentNode.removeChild(input);
+      anchor.style.display = "";
+    }
+    function commit() {
+      if (done) return;
+      var v = (input.value || "").trim();
+      if (!v || v === original) { cancel(); return; }
+      done = true;
+      input.disabled = true;
+      try {
+        pycmd("ba:deck:rename-to:" + did + ":" + encodeURIComponent(v));
+      } catch (e) {}
+    }
+    input.addEventListener("keydown", function (e) {
+      // Stop propagation on every key so Anki's top-level QShortcuts
+      // (`a`, `b`, `d`, `s`, `t`, `y`) don't fire while typing a name.
+      e.stopPropagation();
+      if (e.key === "Enter") {
+        e.preventDefault();
+        commit();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        cancel();
+      }
+    });
+    input.addEventListener("keyup", function (e) { e.stopPropagation(); });
+    input.addEventListener("keypress", function (e) { e.stopPropagation(); });
+    input.addEventListener("blur", function () { commit(); });
+
+    // Focus + select-all on the next frame so layout settles first.
+    requestAnimationFrame(function () {
+      input.focus();
+      try { input.select(); } catch (_) {}
+    });
+    return true;
   }
 
   function position(menu, anchor) {
@@ -155,4 +254,54 @@
     var first = menu.querySelector(".ad-menu-item");
     if (first) first.focus();
   };
+
+  /* Wire the native gear `<a>` (Anki renders one per deck row in the home
+     table) so it opens our custom menu instead of Anki's QMenu. Without
+     this, multi-deck home pages would still get the legacy modal-based
+     rename and the rest of the native deck-options dialog. */
+  function wireGears() {
+    var gears = document.querySelectorAll("tr.deck img.gears");
+    for (var i = 0; i < gears.length; i++) {
+      var a = gears[i].closest("a");
+      if (!a || a.__adGearWired) continue;
+      var row = a.closest("tr.deck");
+      if (!row || !row.id) continue;
+      a.__adGearWired = true;
+      // Drop Anki's inline `onclick='return pycmd("opts:<did>")'` so the
+      // QMenu never opens, then own the click ourselves.
+      a.removeAttribute("onclick");
+      (function (anchor, did) {
+        anchor.addEventListener("click", function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          // currentTarget is the anchor so position() can anchor the menu
+          // off the actual gear cell.
+          window.__adDeckOpts(did, e);
+        });
+      })(a, row.id);
+    }
+  }
+
+  function initGears() {
+    wireGears();
+    if (window.MutationObserver) {
+      // Anki re-renders the deck list after operations (study, rename,
+      // collapse). Coalesce mutations into one rAF tick before re-wiring.
+      var pending = 0;
+      var mo = new MutationObserver(function () {
+        if (pending) return;
+        pending = requestAnimationFrame(function () {
+          pending = 0;
+          wireGears();
+        });
+      });
+      mo.observe(document.body, { childList: true, subtree: true });
+    }
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initGears);
+  } else {
+    initGears();
+  }
 })();
