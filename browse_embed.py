@@ -47,6 +47,72 @@ from aqt.qt import (
 
 SIDEBAR_W = 264  # px — matches --rf-side-w in web/theme.css; same as addcard_embed
 
+# Browser sidebar (the tag/decks tree inside the embedded Browser). The
+# Anki default of ~240px gets visibly squeezed on small windows because
+# QSplitter scales setSizes() proportionally — pin a comfortable preferred
+# width and a hard minimum so it can't shrink past readability.
+SIDEBAR_DOCK_PREF = 280
+SIDEBAR_DOCK_MIN = 220
+SIDEBAR_DOCK_MAX = 480  # past this the central pane (table + editor) starts to look empty
+CENTRAL_MIN = 420  # search + card table + editor pane need this much
+
+
+def _clamp_splitter(splitter: "QSplitter", central: Any) -> None:
+    """Re-set sizes after a drag so the docks stay within [MIN, MAX] AND
+    the handles sit flush against their widgets. Without this the handle
+    can drag past a dock's maxWidth, leaving a dead empty band of overlay
+    background between the dock and the centre pane."""
+    try:
+        count = splitter.count()
+        sizes = list(splitter.sizes())
+        avail = splitter.width() - splitter.handleWidth() * max(0, count - 1)
+        sidebar_total = 0
+        for i in range(count):
+            w = splitter.widget(i)
+            if w is central:
+                continue
+            sizes[i] = max(SIDEBAR_DOCK_MIN, min(SIDEBAR_DOCK_MAX, sizes[i]))
+            sidebar_total += sizes[i]
+        for i in range(count):
+            if splitter.widget(i) is central:
+                sizes[i] = max(CENTRAL_MIN, avail - sidebar_total)
+        # Only re-set if anything actually changed (avoid signal loop).
+        if sizes != list(splitter.sizes()):
+            splitter.blockSignals(True)
+            try:
+                splitter.setSizes(sizes)
+            finally:
+                splitter.blockSignals(False)
+    except Exception:
+        pass
+
+
+def _apply_initial_splitter_sizes(splitter: "QSplitter", central: Any) -> None:
+    """Set initial splitter sizes from the overlay's actual width so a
+    narrow window doesn't end up with a 100px sidebar after QSplitter
+    proportionally scales setSizes(). Deferred via QTimer.singleShot(0)
+    so the overlay has been laid out and width() is meaningful."""
+
+    def _set() -> None:
+        try:
+            count = splitter.count()
+            handles = max(0, count - 1) * splitter.handleWidth()
+            avail = max(0, splitter.width() - handles)
+            non_central = count - 1
+            sidebars = min(SIDEBAR_DOCK_PREF, max(SIDEBAR_DOCK_MIN, (avail - CENTRAL_MIN) // max(1, non_central)))
+            central_w = max(CENTRAL_MIN, avail - sidebars * non_central)
+            sizes = []
+            for i in range(count):
+                if splitter.widget(i) is central:
+                    sizes.append(central_w)
+                else:
+                    sizes.append(sidebars)
+            splitter.setSizes(sizes)
+        except Exception:
+            pass
+
+    QTimer.singleShot(0, _set)
+
 
 def _palette_styles() -> str:
     """QSS for the overlay frame. The Browser's own internals carry their
@@ -61,7 +127,9 @@ def _palette_styles() -> str:
 
 
 class _EmbedFilter(QObject):
-    """Re-positions the embed overlay whenever the main window is resized."""
+    """Re-positions the embed overlay whenever the main window is resized.
+    Also re-applies the sidebar clamp so QSplitter's proportional resize
+    can't drag the sidebar past SIDEBAR_DOCK_MAX into the empty-gap state."""
 
     def __init__(self, overlay: QFrame) -> None:
         super().__init__(overlay)
@@ -79,6 +147,10 @@ class _EmbedFilter(QObject):
                 )
             except Exception:
                 pass
+            sp = _state.get("splitter")
+            c = _state.get("central")
+            if sp is not None and c is not None:
+                _clamp_splitter(sp, c)
         return False
 
 
@@ -112,6 +184,8 @@ def close_inline() -> None:
     _state["browser"] = None
     _state["overlay"] = None
     _state["filter"] = None
+    _state.pop("splitter", None)
+    _state.pop("central", None)
     cw_palette = _state.pop("cw_palette", None)
     curtain = _state.pop("curtain", None)
     if curtain is not None:
@@ -279,28 +353,39 @@ def open_inline(parent_mw: Any = None) -> None:
         if left_docks or right_docks:
             splitter = QSplitter(Qt.Orientation.Horizontal, overlay)
             splitter.setChildrenCollapsible(False)
-            splitter.setHandleWidth(1)
+            splitter.setHandleWidth(6)
+            splitter.setStyleSheet(
+                "QSplitter::handle { background: " + palette["line"] + "; }"
+                "QSplitter::handle:hover { background: "
+                + palette["line2"] + "; }"
+            )
+            # Use min/max width on the dock contents AND clamp via
+            # splitterMoved — Qt respects min/max for widget size but lets the
+            # handle drag past max, leaving a dead visual gap. The signal
+            # handler re-sets sizes so the handle snaps to where it should.
             for inner in left_docks:
                 inner.setParent(None)
+                inner.setMinimumWidth(SIDEBAR_DOCK_MIN)
+                inner.setMaximumWidth(SIDEBAR_DOCK_MAX)
                 splitter.addWidget(inner)
+            central.setMinimumWidth(CENTRAL_MIN)
             splitter.addWidget(central)
             for inner in right_docks:
                 inner.setParent(None)
+                inner.setMinimumWidth(SIDEBAR_DOCK_MIN)
+                inner.setMaximumWidth(SIDEBAR_DOCK_MAX)
                 splitter.addWidget(inner)
-            # Stretch only the central pane; docks keep their preferred
-            # widths. Initial sizes default to ~240px for each dock and
-            # the rest to central.
-            sizes: list[int] = []
+            splitter.splitterMoved.connect(
+                lambda *_a, sp=splitter, c=central: _clamp_splitter(sp, c)
+            )
+            _state["central"] = central
             for i in range(splitter.count()):
-                if splitter.widget(i) is central:
-                    splitter.setStretchFactor(i, 1)
-                    sizes.append(800)
-                else:
-                    splitter.setStretchFactor(i, 0)
-                    sizes.append(240)
-            splitter.setSizes(sizes)
+                splitter.setStretchFactor(
+                    i, 1 if splitter.widget(i) is central else 0
+                )
             v.addWidget(splitter, 1)
             _state["splitter"] = splitter
+            _apply_initial_splitter_sizes(splitter, central)
         else:
             central.setParent(overlay)
             v.addWidget(central, 1)

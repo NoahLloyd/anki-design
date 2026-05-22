@@ -2907,6 +2907,87 @@ def _dev_run_cmd(raw: str) -> None:
                     except Exception:
                         pass
                 rv.bottom.web.evalWithCallback(js, _cb)
+        elif cmd.startswith("browse_dims"):
+            try:
+                from aqt.qt import QFrame, QSplitter
+                ov = None
+                for f in mw.form.centralwidget.findChildren(QFrame):
+                    if f.objectName() == "ba-browse-embed":
+                        ov = f
+                        break
+                if ov is None:
+                    _dev_cmd_log("browse_dims: no overlay")
+                else:
+                    _dev_cmd_log(
+                        f"overlay: geom={ov.geometry().getRect()} "
+                        f"size={ov.width()}x{ov.height()}"
+                    )
+                    sp = ov.findChild(QSplitter)
+                    if sp is None:
+                        _dev_cmd_log("browse_dims: no splitter")
+                    else:
+                        _dev_cmd_log(
+                            f"splitter: sizes={sp.sizes()} "
+                            f"count={sp.count()} handle_w={sp.handleWidth()} "
+                            f"orient={sp.orientation()}"
+                        )
+                        for i in range(sp.count()):
+                            w = sp.widget(i)
+                            _dev_cmd_log(
+                                f"  child[{i}]: {type(w).__name__} "
+                                f"obj={w.objectName()!r} "
+                                f"size={w.width()}x{w.height()} "
+                                f"min={w.minimumWidth()} max={w.maximumWidth()}"
+                            )
+            except Exception as e:
+                _dev_cmd_log(f"browse_dims err: {e!r}")
+        elif cmd.startswith("browse_search:"):
+            # Run a search in the embedded Browser and select the first row.
+            try:
+                from . import browse_embed
+                br = browse_embed._state.get("browser")
+                q = cmd.split(":", 1)[1]
+                if br is not None:
+                    br.form.searchEdit.lineEdit().setText(q)
+                    br.onSearchActivated()
+                    try:
+                        idx = br.table._model.index(0, 0)
+                        br.table._view.setCurrentIndex(idx)
+                        br.table._view.selectionModel().select(
+                            idx,
+                            br.table._view.selectionModel().SelectionFlag.ClearAndSelect
+                            | br.table._view.selectionModel().SelectionFlag.Rows,
+                        )
+                    except Exception as e:
+                        _dev_cmd_log(f"select err: {e!r}")
+                    _dev_cmd_log(f"browse_search: {q!r}")
+            except Exception as e:
+                _dev_cmd_log(f"browse_search err: {e!r}")
+        elif cmd.startswith("browse_resize:"):
+            try:
+                from aqt.qt import QFrame, QSplitter
+                parts = cmd.split(":", 1)[1].split(",")
+                want = [int(p.strip()) for p in parts]
+                ov = None
+                for f in mw.form.centralwidget.findChildren(QFrame):
+                    if f.objectName() == "ba-browse-embed":
+                        ov = f
+                        break
+                if ov is not None:
+                    sp = ov.findChild(QSplitter)
+                    if sp is not None:
+                        sp.setSizes(want)
+                        # Fire splitterMoved to mimic a user drag (so the
+                        # clamp handler runs as it would in real usage).
+                        try:
+                            sp.splitterMoved.emit(sp.sizes()[0], 1)
+                        except Exception:
+                            pass
+                        _dev_cmd_log(
+                            f"browse_resize: set {want} -> got {sp.sizes()}"
+                        )
+            except Exception as e:
+                _dev_cmd_log(f"browse_resize err: {e!r}")
     except Exception as e:
         try:
             print("[ba-dev-cmd]", repr(e))
