@@ -1406,13 +1406,66 @@ def _is_congrats_url(url: str) -> bool:
     return False
 
 
+def _is_graphs_url(url: str) -> bool:
+    if not url:
+        return False
+    # Anki serves the SvelteKit stats page at <serverURL>/graphs (with an
+    # optional `#night` fragment). The page is loaded by NewDeckStats via
+    # `web.load_sveltekit_page("graphs")`.
+    low = url.lower()
+    if low.endswith("/graphs") or low.endswith("/graphs/"):
+        return True
+    if "/graphs#" in low or "/graphs?" in low:
+        return True
+    return False
+
+
+def _inject_graphs_overrides(webview) -> None:
+    """Style the SvelteKit graphs page with our palette + typography.
+
+    The page uses Anki's `--canvas` / `--fg` / etc tokens; web/stats.css
+    re-maps those to our `--rf-*` tokens. tokens.css must load first so
+    the `--rf-*` variables are defined when stats.css consumes them."""
+    cfg = _config()
+    accent = cfg.get("accent", "#6c8cff")
+    theme_pref = cfg.get("theme", "system")
+    theme_attr = ""
+    if theme_pref in ("light", "dark"):
+        import json as _json
+        theme_attr = (
+            f"document.documentElement.dataset.rfTheme="
+            f"{_json.dumps(theme_pref)};"
+        )
+    accent_style = (
+        f"var st=document.createElement('style');"
+        f"st.textContent=':root,body{{--rf-accent:{accent};}}';"
+        f"document.head.appendChild(st);"
+    )
+    css_files = ["tokens.css", "theme.css", "stats.css"]
+    css_inject = ""
+    for f in css_files:
+        css_inject += (
+            f"(function(){{var l=document.createElement('link');"
+            f"l.rel='stylesheet';l.href='{WEB}/{f}';"
+            f"document.head.appendChild(l);}})();"
+        )
+    try:
+        webview.eval(theme_attr + accent_style + css_inject)
+    except Exception:
+        pass
+
+
 def on_webview_did_inject_style_into_page(webview) -> None:
-    """Detect Anki's congrats Svelte page after its dynamic styling finishes,
-    then graft our sidebar + redesign on top. Idempotent (the JS bails if it
-    already initialised), so re-firing on theme changes is harmless."""
+    """Detect Anki's congrats / graphs Svelte pages after their dynamic
+    styling finishes, then graft our redesign on top. Idempotent (the
+    style/script appends bail if they already ran), so re-firing on theme
+    changes is harmless."""
     try:
         url = webview.page().url().toString()
     except Exception:
+        return
+    if _is_graphs_url(url):
+        _inject_graphs_overrides(webview)
         return
     if not _is_congrats_url(url):
         return
@@ -2285,9 +2338,17 @@ def _dev_screenshot(request_path: str) -> None:
             # complete before the 2000ms grab.
             _QT.singleShot(1000, _hover_add)
         mw_width = req.get("mw_width")
+        mw_height = req.get("mw_height")
         if isinstance(mw_width, int) and mw_width > 200:
             try:
-                mw.resize(mw_width, mw.height())
+                h = mw_height if isinstance(mw_height, int) and mw_height > 200 else mw.height()
+                mw.resize(mw_width, h)
+                QApplication.processEvents()
+            except Exception:
+                pass
+        elif isinstance(mw_height, int) and mw_height > 200:
+            try:
+                mw.resize(mw.width(), mw_height)
                 QApplication.processEvents()
             except Exception:
                 pass
@@ -2495,6 +2556,14 @@ def _dev_dump(request_path: str) -> None:
                     ac = None
             if ac is not None and getattr(ac, "editor", None):
                 web = ac.editor.web
+        elif target_kind == "stats-embed":
+            try:
+                from . import stats_embed
+                sd = stats_embed._state.get("stats")
+                if sd is not None and getattr(sd, "form", None):
+                    web = getattr(sd.form, "web", None)
+            except Exception:
+                pass
         # 2) `main`/`mw`: pin to mw.web. mw has multiple QWebEngineViews
         # (toolbarWeb, web, bottomWeb); findChild() returns the first one
         # constructed (usually the toolbar) which gives a useless 1-line
