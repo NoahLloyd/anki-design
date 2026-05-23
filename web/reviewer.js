@@ -29,16 +29,26 @@
     }
   }
 
+  // Reviewer state mirror. Set authoritatively by Python (via __baSetEase)
+  // because not every card type emits `<hr id=answer>` (Image Occlusion's
+  // built-in template doesn't, and any back template that doesn't start with
+  // {{FrontSide}} won't either). Used by:
+  //   - ease selector visibility
+  //   - clickToReveal: skip when already on answer
+  //   - hasAnswerRevealed: edit-mode gate
+  // Initial value is "question" — Python always confirms once it gets a hook.
+  window.__baReviewerState = window.__baReviewerState || "question";
+
   // Wrap everything from the answer divider onward in a single .ba-rv-answer
   // element so CSS can fade it in without moving the question above it.
+  // For card types without `hr#answer` (Image Occlusion etc.) this is a
+  // no-op; the answer simply appears without the fade — visibility of the
+  // ease selector is driven by __baSetEase, not by this wrap.
   function wrapAnswer() {
     var qa = document.getElementById("qa");
     if (!qa) return;
-    var ease = document.querySelector(".ba-rv-ease");
-    var hr = qa.querySelector("hr#answer");
-    var hasAnswer = !!hr || !!qa.querySelector(".ba-rv-answer");
-    if (ease) ease.hidden = !hasAnswer;
     if (qa.querySelector(".ba-rv-answer")) return;  // already wrapped
+    var hr = qa.querySelector("hr#answer");
     if (!hr) return;
     var wrap = document.createElement("div");
     wrap.className = "ba-rv-answer";
@@ -55,10 +65,15 @@
 
   // Receive {ease: interval_string} + defaultEase from Python and write
   // the interval strings into the ease chips, hiding chips with no
-  // matching ease (i.e., 2/3-button new cards).
-  window.__baSetEase = function (intervals, defaultEase) {
+  // matching ease (i.e., 2/3-button new cards). The `isAnswer` flag comes
+  // from mw.reviewer.state on the Python side and is the authoritative
+  // signal for whether to show the ease container — DOM heuristics
+  // (hr#answer) miss Image Occlusion and any non-FrontSide template.
+  window.__baSetEase = function (intervals, defaultEase, isAnswer) {
+    window.__baReviewerState = isAnswer ? "answer" : "question";
     var ease = document.querySelector(".ba-rv-ease");
     if (!ease) return;
+    ease.hidden = !isAnswer;
     ease.querySelectorAll(".ba-rv-ease-key").forEach(function (btn) {
       var e = btn.getAttribute("data-ease");
       var label = intervals && intervals[e];
@@ -102,7 +117,12 @@
     qa.addEventListener("click", function (e) {
       // Don't advance the card while the user is editing it.
       if (document.body.classList.contains("ba-editing")) return;
-      if (qa.querySelector(".ba-rv-answer")) return;  // already answered
+      // Already on the answer side? Skip — pycmd("ans") on an already-shown
+      // answer just re-renders the same content (wasteful). Check Python's
+      // authoritative state first; fall back to DOM for the first paint
+      // before the hook has fired.
+      if (window.__baReviewerState === "answer") return;
+      if (qa.querySelector(".ba-rv-answer")) return;
       var t = e.target;
       while (t && t !== qa) {
         var tag = (t.tagName || "").toLowerCase();
@@ -290,6 +310,10 @@
   }
 
   function hasAnswerRevealed() {
+    // Trust Python's signal first — covers Image Occlusion and any custom
+    // template that doesn't emit `hr#answer`. Fall back to DOM detection
+    // for the brief window before the first hook fires.
+    if (window.__baReviewerState === "answer") return true;
     var qa = document.getElementById("qa");
     if (!qa) return false;
     return !!(qa.querySelector(".ba-rv-answer")

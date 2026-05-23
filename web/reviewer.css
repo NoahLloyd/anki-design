@@ -59,9 +59,19 @@ html, body {
    padding-bottom. */
 body {
   font-family: var(--rf-serif) !important;
+  /* Lock the body to the viewport so the ease selector at grid-row 3 stays
+     pinned to the bottom even on long cards. `min-height: 100vh` alone lets
+     the body grow past the viewport when card content overflows, and the
+     `1fr` row grows with it — pushing the ease keys below the fold. With
+     `minmax(0, 1fr)` the middle row honors `overflow-y: auto` inside #qa
+     and the user scrolls the card instead of the page. The friend's
+     "can't find the 10 min / 1 dag / 3 dage / 7 dage" feedback was driven
+     by exactly this — long IO/Cloze answers pushing the keys out of view. */
+  height: 100vh !important;
   min-height: 100vh !important;
+  max-height: 100vh !important;
   display: grid !important;
-  grid-template-rows: auto 1fr auto !important;
+  grid-template-rows: auto minmax(0, 1fr) auto !important;
   background-position: 0 0 !important;
   background-attachment: scroll !important;
   background-size: auto !important;
@@ -73,6 +83,7 @@ body {
      Font size); the value comes through as --rf-card-font-size. */
   font-size: var(--rf-card-font-size, 28px);
   box-sizing: border-box;
+  overflow: hidden;
 }
 
 /* Anki's reviewer.css sets margin:20px and a hairline `hr` rule — we wipe
@@ -444,16 +455,18 @@ body.card { max-width: none !important; }
   .ba-ease-ghost, .ba-ease-bloom { animation: none; display: none; }
 }
 
-/* Card content sits in the second grid row. We anchor it at a stable Y
-   (28% from the top of the available space) so revealing the answer
-   below the question never *moves* the question. */
+/* Card content sits in the second grid row. We intentionally do NOT impose
+   flex/grid layout here — Anki puts card text and inline elements directly
+   inside #qa (no wrapper), and a flex container wraps each text run and
+   each inline element in an anonymous flex item, which breaks multi-line
+   cloze paragraphs into one centered word per line. So this is a plain
+   block scroller; Anki's note-type CSS owns the visual layout of the
+   content itself (text-align, .cloze color/weight, etc). The body's
+   `text-align: center` carries over for templates that expect it. */
 #qa {
   grid-row: 2;
-  display: flex !important;
-  flex-direction: column;
-  justify-content: flex-start;
-  align-items: center;
-  padding: max(96px, 18vh) 32px 64px;
+  display: block;
+  padding: 48px 32px 32px;
   width: 100%;
   max-width: var(--rf-card-max-width, 680px);
   margin: 0 auto;

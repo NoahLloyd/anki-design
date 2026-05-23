@@ -1804,8 +1804,18 @@ def _push_progress() -> None:
         default_ease = int(mw.reviewer._defaultEase())
     except Exception:
         pass
+    # Reviewer state is authoritative — `mw.reviewer.state` is "question" or
+    # "answer". Pass it explicitly so JS can drive ease-selector visibility
+    # without relying on `<hr id=answer>` (which Image Occlusion and any
+    # back template that doesn't start with `{{FrontSide}}` don't emit).
+    is_answer = False
+    try:
+        is_answer = getattr(mw.reviewer, "state", "question") == "answer"
+    except Exception:
+        pass
     import json as _json
     intervals_js = _json.dumps(intervals)
+    is_answer_js = "true" if is_answer else "false"
     try:
         mw.reviewer.web.eval(
             f"window.__reforgeProgress && window.__reforgeProgress({pct},{done},{rem});"
@@ -1813,7 +1823,7 @@ def _push_progress() -> None:
             f"var cn=$('ba-rv-c-new'),cl=$('ba-rv-c-learn'),cd=$('ba-rv-c-due');"
             f"if(cn)cn.textContent={new_n};if(cl)cl.textContent={learn_n};"
             f"if(cd)cd.textContent={rev_n};"
-            f"window.__baSetEase && window.__baSetEase({intervals_js}, {default_ease});"
+            f"window.__baSetEase && window.__baSetEase({intervals_js}, {default_ease}, {is_answer_js});"
         )
     except Exception:
         pass
@@ -2938,8 +2948,11 @@ def _dev_run_cmd(raw: str) -> None:
                 _dev_cmd_log(f"reload_page err: {e!r}")
         elif cmd == "decks_list":
             try:
-                names = [d.name for d in mw.col.decks.all_names_and_ids()]
-                _dev_cmd_log(f"decks: {names}")
+                items = [(d.id, d.name) for d in mw.col.decks.all_names_and_ids()]
+                _dev_cmd_log(f"decks: {items}")
+                _dev_cmd_log(f"col path: {mw.col.path!r}")
+                _dev_cmd_log(f"notes: {mw.col.db.scalar('SELECT COUNT(*) FROM notes')}")
+                _dev_cmd_log(f"cards: {mw.col.db.scalar('SELECT COUNT(*) FROM cards')}")
             except Exception as e:
                 _dev_cmd_log(f"decks err: {e!r}")
         elif cmd.startswith("create_test:"):
@@ -2968,6 +2981,144 @@ def _dev_run_cmd(raw: str) -> None:
                     )
             except Exception as e:
                 _dev_cmd_log(f"state_info err: {e!r}")
+        elif cmd.startswith("unbury_deck:"):
+            did = int(cmd.split(":", 1)[1])
+            try:
+                mw.col.sched.unbury_deck(did)
+                _dev_cmd_log(f"unburied deck {did}")
+            except Exception as e:
+                _dev_cmd_log(f"unbury err: {e!r}")
+        elif cmd == "dump_fit":
+            out = os.path.join(ADDON_SRC, ".context", "fit.txt")
+            rv = getattr(mw, "reviewer", None)
+            if rv and getattr(rv, "web", None):
+                js = (
+                    "(function(){"
+                    "var qa=document.getElementById('qa');"
+                    "var card=qa?qa.querySelector('.card'):null;"
+                    "var bodyCls=document.body?document.body.className:'';"
+                    "var qaCS=qa?getComputedStyle(qa):null;"
+                    "var cardCS=card?getComputedStyle(card):null;"
+                    "return JSON.stringify({"
+                    "bodyClasses:bodyCls,"
+                    "isLong:document.body.classList.contains('ba-rv-long'),"
+                    "qaScrollHeight:qa?qa.scrollHeight:null,"
+                    "qaClientHeight:qa?qa.clientHeight:null,"
+                    "qaPaddingTop:qaCS?qaCS.paddingTop:null,"
+                    "qaPaddingBottom:qaCS?qaCS.paddingBottom:null,"
+                    "cardFontSize:cardCS?cardCS.fontSize:null,"
+                    "cardInlineFontSize:card?card.style.fontSize:null"
+                    "});})()"
+                )
+                def _cb(r, _p=out):
+                    try: open(_p,"w").write(str(r))
+                    except Exception: pass
+                rv.web.evalWithCallback(js, _cb)
+        elif cmd == "dump_html":
+            out = os.path.join(ADDON_SRC, ".context", "html.txt")
+            rv = getattr(mw, "reviewer", None)
+            w = mw.web if mw else None
+            if w is not None:
+                js = (
+                    "JSON.stringify({"
+                    "title:document.title,"
+                    "url:location.href,"
+                    "bodyHead:document.body?document.body.innerHTML.substring(0,500):'no body'"
+                    "})"
+                )
+                def _cb(r, _p=out):
+                    try: open(_p,"w").write(str(r))
+                    except Exception: pass
+                w.evalWithCallback(js, _cb)
+        elif cmd == "dump_body_css":
+            out = os.path.join(ADDON_SRC, ".context", "body_css.txt")
+            rv = getattr(mw, "reviewer", None)
+            if rv and getattr(rv, "web", None):
+                js = (
+                    "(function(){"
+                    "var b=document.body;"
+                    "var cs=getComputedStyle(b);"
+                    "var links=Array.from(document.querySelectorAll('link[rel=stylesheet]'))"
+                    ".map(function(l){return l.href;});"
+                    "return JSON.stringify({"
+                    "height:cs.height,maxHeight:cs.maxHeight,"
+                    "minHeight:cs.minHeight,overflow:cs.overflow,"
+                    "display:cs.display,gridTemplateRows:cs.gridTemplateRows,"
+                    "links:links"
+                    "});})()"
+                )
+                def _cb(r, _p=out):
+                    try: open(_p,"w").write(str(r))
+                    except Exception: pass
+                rv.web.evalWithCallback(js, _cb)
+        elif cmd == "dump_layout":
+            out = os.path.join(ADDON_SRC, ".context", "layout.txt")
+            rv = getattr(mw, "reviewer", None)
+            if rv and getattr(rv, "web", None):
+                js = (
+                    "(function(){"
+                    "function rect(el){if(!el)return null;"
+                    "var r=el.getBoundingClientRect();"
+                    "var cs=getComputedStyle(el);"
+                    "return {x:r.x,y:r.y,w:r.width,h:r.height,"
+                    "display:cs.display,visibility:cs.visibility,"
+                    "overflow:cs.overflow,gridRow:cs.gridRow};}"
+                    "return JSON.stringify({"
+                    "viewport:{w:window.innerWidth,h:window.innerHeight},"
+                    "body:rect(document.body),"
+                    "qa:rect(document.getElementById('qa')),"
+                    "head:rect(document.querySelector('.ba-rv-head')),"
+                    "ease:rect(document.querySelector('.ba-rv-ease')),"
+                    "scroll:{x:window.scrollX,y:window.scrollY,"
+                    "docH:document.documentElement.scrollHeight}"
+                    "});})()"
+                )
+                def _cb(r, _p=out):
+                    try: open(_p,"w").write(str(r))
+                    except Exception: pass
+                rv.web.evalWithCallback(js, _cb)
+        elif cmd == "dump_state":
+            # Quick state probe: writes JSON to .context/state.txt with
+            # window.__baReviewerState, ease.hidden, populated intervals,
+            # whether `hr#answer` is present, and the rendered card type.
+            out = os.path.join(ADDON_SRC, ".context", "state.txt")
+            rv = getattr(mw, "reviewer", None)
+            if rv and getattr(rv, "web", None):
+                js = (
+                    "(function(){"
+                    "var ease=document.querySelector('.ba-rv-ease');"
+                    "var qa=document.getElementById('qa');"
+                    "var hr=qa?qa.querySelector('hr#answer'):null;"
+                    "var wrap=qa?qa.querySelector('.ba-rv-answer'):null;"
+                    "var bodyCls=document.body?document.body.className:'';"
+                    "var intervals=Array.from(document.querySelectorAll("
+                    "'.ba-rv-ease-int')).map(function(s){return s.textContent;});"
+                    "var hidden=ease?ease.hidden:null;"
+                    "var visibleKeys=Array.from(document.querySelectorAll("
+                    "'.ba-rv-ease-key')).filter(function(b){return !b.hidden;})"
+                    ".map(function(b){return b.getAttribute('data-ease')+':'"
+                    "+(b.querySelector('.ba-rv-ease-int')||{textContent:''})"
+                    ".textContent;});"
+                    "return JSON.stringify({"
+                    "jsState:window.__baReviewerState,"
+                    "easeHidden:hidden,"
+                    "hasHrAnswer:!!hr,"
+                    "hasWrap:!!wrap,"
+                    "bodyClasses:bodyCls,"
+                    "intervals:intervals,"
+                    "visibleKeys:visibleKeys"
+                    "});})()"
+                )
+                def _cb(r, _p=out, _rv=rv):
+                    try:
+                        rv_state = getattr(_rv, "state", "?")
+                        cid = _rv.card.id if _rv.card else "?"
+                        open(_p, "w").write(
+                            f"pyState={rv_state} card={cid}\njs={r}\n"
+                        )
+                    except Exception:
+                        pass
+                rv.web.evalWithCallback(js, _cb)
         elif cmd.startswith("dump_ease_main"):
             out = os.path.join(ADDON_SRC, ".context", "ease_main.txt")
             rv = getattr(mw, "reviewer", None)
