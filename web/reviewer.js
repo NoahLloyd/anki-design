@@ -137,6 +137,62 @@
     }, { passive: true });
   }
 
+  // Press-feedback FX. Two overlays, both position: fixed on document.body
+  // so they survive Anki's #qa swap:
+  //   • bloom — a soft radial ripple in the ease color, sized at the key
+  //   • ghost — the interval text from the pressed key, faded in place
+  // Pointer-events: none on both — never gates anything.
+  //
+  // Triggered from two paths:
+  //   1. Click: mousedown handler on each ease key calls this synchronously,
+  //      so the FX starts before the pycmd → Python roundtrip. Without
+  //      this, the button is already hidden by the card swap by the time
+  //      the FX fires.
+  //   2. Keyboard: Python's reviewer_will_answer_card hook calls this via
+  //      web.eval. The pre-roundtrip click path may have already fired —
+  //      the lock below makes the eval call a no-op in that case.
+  window.__baEaseFx = function (ease) {
+    var n = parseInt(ease, 10);
+    if (!(n >= 1 && n <= 4)) return;
+    if (window.__baEaseFxLock) return;
+    window.__baEaseFxLock = true;
+    setTimeout(function () { window.__baEaseFxLock = false; }, 250);
+    var keys = document.querySelectorAll(".ba-rv-ease-key");
+    if (!keys.length) return;
+    var target = null;
+    for (var i = 0; i < keys.length; i++) {
+      if (parseInt(keys[i].getAttribute("data-ease"), 10) === n) {
+        target = keys[i];
+        break;
+      }
+    }
+    if (!target || target.hidden) return;
+    var rect = target.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    var cx = rect.left + rect.width / 2;
+    var cy = rect.top + rect.height / 2;
+
+    var bloom = document.createElement("div");
+    bloom.className = "ba-ease-bloom ba-ease-bloom-" + n;
+    bloom.style.left = cx + "px";
+    bloom.style.top = cy + "px";
+
+    var ghost = document.createElement("div");
+    ghost.className = "ba-ease-ghost ba-ease-ghost-" + n;
+    ghost.style.left = rect.left + "px";
+    ghost.style.top = rect.top + "px";
+    ghost.style.width = rect.width + "px";
+    ghost.style.height = rect.height + "px";
+    ghost.textContent = (target.textContent || "").trim();
+
+    document.body.appendChild(bloom);
+    document.body.appendChild(ghost);
+    setTimeout(function () {
+      bloom.remove();
+      ghost.remove();
+    }, 760);
+  };
+
   window.__reforgeProgress = function (pct, done, rem) {
     ensureBar();
     var fill = document.getElementById("reforge-progress-fill");
@@ -369,10 +425,30 @@
     try { pycmd("ba:edit-state:off"); } catch (_) {}
   }
 
+  // Run the press FX immediately on mousedown for each ease key, so a
+  // mouse click feels as snappy as a keyboard shortcut — without this, the
+  // FX only fires after the pycmd → Python → web.eval roundtrip, by which
+  // time the button has already been hidden by the card swap and the
+  // animation appears to start "after the button disappeared". The
+  // Python-side `reviewer_will_answer_card` still fires, but the FX lock
+  // makes it a no-op for the click path.
+  function hookEaseClicks() {
+    var keys = document.querySelectorAll(".ba-rv-ease-key");
+    for (var i = 0; i < keys.length; i++) {
+      keys[i].addEventListener("mousedown", function () {
+        var n = parseInt(this.getAttribute("data-ease"), 10);
+        if (n >= 1 && n <= 4) {
+          try { window.__baEaseFx(n); } catch (_) {}
+        }
+      });
+    }
+  }
+
   function boot() {
     ensureBar();
     wrapAnswer();
     clickToReveal();
+    hookEaseClicks();
     watchBody();
   }
 
