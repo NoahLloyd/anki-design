@@ -378,6 +378,72 @@ body.card { max-width: none !important; }
 .ba-rv-ease-4 { --ba-key: var(--rf-easy); }
 .ba-rv-ease-key[data-default] { font-weight: 700; opacity: 1; }
 
+/* Press-feedback FX — fires when the user grades a card (keyboard 1–4 or
+   click). Two layers, both position: fixed on document.body outside #qa
+   so they survive Anki's card swap underneath:
+     • bloom — a soft radial ripple in the ease color, expanding outward
+     • ghost — the interval text from the pressed key (no background fill,
+               just colored typography), lifting upward and fading
+   Both use a single continuous transform interpolation so the motion is
+   smooth from start to finish — no compound easing at intermediate stops. */
+.ba-ease-ghost,
+.ba-ease-bloom {
+  position: fixed;
+  pointer-events: none;
+  z-index: 9998;
+  will-change: transform, opacity;
+}
+.ba-ease-bloom {
+  width: 72px;
+  height: 72px;
+  margin-left: -36px;
+  margin-top: -36px;
+  border-radius: 50%;
+  opacity: 0;
+  background: radial-gradient(
+    circle,
+    color-mix(in oklab, var(--ba-key, var(--rf-good)) 42%, transparent) 0%,
+    color-mix(in oklab, var(--ba-key, var(--rf-good)) 14%, transparent) 45%,
+    transparent 75%
+  );
+  animation: ba-ease-bloom 560ms cubic-bezier(.2, .6, .2, 1) forwards;
+}
+.ba-ease-ghost {
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  font-family: var(--rf-sans);
+  font-weight: 600;
+  font-size: calc(14px * var(--rf-chrome-scale, 1));
+  letter-spacing: 0;
+  color: var(--ba-key, var(--rf-good));
+  opacity: 0;
+  animation: ba-ease-ghost 520ms cubic-bezier(.2, .6, .2, 1) forwards;
+}
+.ba-ease-bloom-1, .ba-ease-ghost-1 { --ba-key: var(--rf-again); }
+.ba-ease-bloom-2, .ba-ease-ghost-2 { --ba-key: var(--rf-hard); }
+.ba-ease-bloom-3, .ba-ease-ghost-3 { --ba-key: var(--rf-good); }
+.ba-ease-bloom-4, .ba-ease-ghost-4 { --ba-key: var(--rf-easy); }
+/* Bloom: smaller and softer than before. The ghost stays put — pure fade,
+   no upward drift (movement reads as "look at me" and distracts from the
+   incoming card). Single transform interpolation on the bloom, so the
+   scale eases continuously with no kinks. */
+@keyframes ba-ease-bloom {
+  0%   { transform: scale(0.6); opacity: 0;   }
+  18%  { opacity: 0.32; }
+  100% { transform: scale(2.0); opacity: 0;   }
+}
+@keyframes ba-ease-ghost {
+  0%   { opacity: 0; }
+  18%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ba-ease-ghost, .ba-ease-bloom { animation: none; display: none; }
+}
+
 /* Card content sits in the second grid row. We anchor it at a stable Y
    (28% from the top of the available space) so revealing the answer
    below the question never *moves* the question. */
@@ -432,15 +498,15 @@ hr#answer {
   margin: 18px auto !important;
 }
 
-/* The answer reveal — a soft fade + 4px slide. Fast (220ms), no easing
-   that lingers. The question above doesn't move because the wrap sits
-   below it in normal flow; only `.ba-rv-answer` animates. */
+/* The answer reveal — a soft pure fade, no movement. The question above
+   doesn't move because the wrap sits below it in normal flow; only
+   `.ba-rv-answer` animates. */
 .ba-rv-answer {
-  animation: ba-rv-reveal 220ms cubic-bezier(.2, .7, .2, 1) both;
+  animation: ba-rv-reveal 240ms cubic-bezier(.2, .6, .2, 1) both;
 }
 @keyframes ba-rv-reveal {
-  from { opacity: 0; transform: translateY(-4px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
   .ba-rv-answer { animation: none; }
