@@ -1869,6 +1869,25 @@ def on_reviewer_will_end() -> None:
     _session["total"] = 0
 
 
+def on_reviewer_will_answer_card(proceed_ease, reviewer, card):
+    """Kick off the press-feedback animation in the reviewer webview.
+    Fires on both keyboard (1–4) and click paths since both flow through
+    ``Reviewer._answerCard``. The eval is queued and runs before Anki's
+    next-card ``_updateQA`` (which Anki also queues, after our handler
+    returns), so the ghost + bloom appear immediately and keep playing
+    while the new card slides in beneath. Pure side effect — we return
+    ``proceed_ease`` unchanged."""
+    try:
+        proceed, ease = proceed_ease
+        if proceed and reviewer is not None and getattr(reviewer, "web", None):
+            reviewer.web.eval(
+                f"window.__baEaseFx && window.__baEaseFx({int(ease)});"
+            )
+    except Exception:
+        pass
+    return proceed_ease
+
+
 # --------------------------------------------------------------------------- #
 # Register hooks
 # --------------------------------------------------------------------------- #
@@ -1890,6 +1909,10 @@ gui_hooks.state_did_change.append(on_state_did_change)
 gui_hooks.reviewer_did_show_question.append(on_show_question)
 gui_hooks.reviewer_did_show_answer.append(on_show_answer)
 gui_hooks.reviewer_will_end.append(on_reviewer_will_end)
+try:
+    gui_hooks.reviewer_will_answer_card.append(on_reviewer_will_answer_card)
+except Exception:
+    pass
 
 # Sidebar nav: route `ba:*` pycmds to the right mw methods + settings dialog.
 gui_hooks.webview_did_receive_js_message.append(_on_js_message)
