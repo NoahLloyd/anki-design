@@ -1711,6 +1711,93 @@ def prepare_base(base: Path, profile: str, force: bool) -> Path:
     return col_path
 
 
+def _seed_cloze_and_io(col, all_card_ids: list[int]) -> None:
+    """Seed a Cloze note (and best-effort IO note) so the demo exercises
+    template structures that don't emit `<hr id=answer>` — important for
+    verifying the reviewer chrome doesn't lose the ease selector on those
+    card types. Cards land in their own decks; new card ids feed back into
+    the simulator pool just like every other deck."""
+    # ---- Cloze: a Danish anatomy card with 6 clozes ---- #
+    cloze_nt = col.models.by_name("Cloze")
+    if cloze_nt is not None:
+        cloze_did = col.decks.id("Medicine::Anatomy — Skull (Cloze)")
+        note = col.new_note(cloze_nt)
+        note["Text"] = (
+            "<b>Hjernekassen — Overblik</b><br><br>"
+            "Hjernekassen omslutter som en beskyttende kapsel "
+            "{{c1::hjernen}} og {{c2::høre-ligevægtsorganet}}. "
+            "Den hviler på atlas (art. {{c3::atlantooccipitalis}}) og "
+            "er dannet af {{c4::6 (8)}} knogler — uparrede "
+            "({{c5::frontale, occipitale, sphenoidale, ethmoidale}}) "
+            "og parrede ({{c6::parietale, temporale}})."
+        )
+        note["Back Extra"] = (
+            "Opdeles i <i>theca cranii</i> og <i>basis cranii</i>."
+        )
+        try:
+            col.add_note(note, cloze_did)
+            all_card_ids.extend(note.card_ids())
+        except Exception as e:
+            print(f"  cloze seed failed: {e!r}")
+
+    # ---- Image Occlusion: best-effort. The Rust backend parses the SVG
+    # into cloze form; the exact SVG attribute schema isn't part of the
+    # published API and changes between versions, so this can fail to
+    # produce visible cards. We try, log, and move on — the Cloze sample
+    # above already exercises the no-hr#answer code path. ---- #
+    try:
+        col.add_image_occlusion_notetype()
+    except Exception:
+        pass
+    io_nt = col.models.by_name("Image Occlusion")
+    if io_nt is None:
+        return
+    # Tiny placeholder image so the IO note can be saved without an external
+    # asset dependency. 1x1 transparent PNG, base64-decoded inline.
+    import base64
+    import tempfile
+    png = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk"
+        "+A8AAQUBAScY42YAAAAASUVORK5CYII="
+    )
+    tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+    tmp.write(png)
+    tmp.close()
+    occlusions_svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 480">'
+        '<rect x="110" y="80" width="160" height="70" fill="#ffeba2" '
+        'data-occlusion-id="1" data-shape="rect"/>'
+        '<rect x="380" y="80" width="160" height="70" fill="#ffeba2" '
+        'data-occlusion-id="2" data-shape="rect"/>'
+        '</svg>'
+    )
+    io_did = col.decks.id("Medicine::Anatomy — Skull (IO)")
+    col.decks.select(io_did)
+    try:
+        col.add_image_occlusion_note(
+            notetype_id=io_nt["id"],
+            image_path=tmp.name,
+            occlusions=occlusions_svg,
+            header="Hjernekassen — Overblik",
+            back_extra=(
+                "<p><b>Dannet af 6 (8) knogler:</b></p>"
+                "<ul><li>Uparrede: frontale, occipitale, sphenoidale, "
+                "ethmoidale</li><li>Parrede: parietale, temporale</li></ul>"
+                "<p>Opdeles i <i>theca cranii</i> og <i>basis cranii</i>.</p>"
+            ),
+            tags=["demo", "io"],
+        )
+        # The IO API places cards on the currently-selected deck. Pull their
+        # IDs from the deck so they participate in the simulator.
+        io_cards = col.db.list("SELECT id FROM cards WHERE did=?", io_did)
+        all_card_ids.extend(io_cards)
+    except Exception as e:
+        # IO format quirks across Anki versions can make this fail; the Cloze
+        # case above is sufficient to exercise the missing-hr#answer path.
+        print(f"  IO seed best-effort failed (Cloze covers the same case): "
+              f"{e!r}")
+
+
 def seed_collection(col_path: Path, years: float, rng: random.Random,
                     variant: str = "full") -> dict:
     """Open a fresh collection at col_path and populate it.
@@ -1740,6 +1827,12 @@ def seed_collection(col_path: Path, years: float, rng: random.Random,
                 note["Back"] = back
                 col.add_note(note, did)
                 all_card_ids.extend(note.card_ids())
+
+        # Cloze + Image Occlusion samples. Both card types use back templates
+        # that don't start with `{{FrontSide}}`, so Anki doesn't emit the
+        # `<hr id=answer>` divider — the reviewer chrome needs to handle that
+        # without losing the ease selector. See reviewer.js + _push_progress.
+        _seed_cloze_and_io(col, all_card_ids)
 
         # Carve off a small "still new" pool from the freshly-added cards
         # so the reviewer has untouched cards to introduce when the user
