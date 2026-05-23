@@ -276,6 +276,42 @@
       }
     }
 
+    // Command-K palette launcher. Rendered as a button styled like a
+    // search input so it reads as "click here to search anything", and
+    // hints the ⌘K shortcut on the right. Actual palette UI is in
+    // web/cmdk.js (injected on every themed page). Sending the pycmd
+    // routes through Python so any open embed (AddCards/Browser/Stats/
+    // Settings) is torn down before the palette opens.
+    var cmdk = document.createElement("button");
+    cmdk.type = "button";
+    cmdk.className = "ba-side-cmdk";
+    cmdk.setAttribute("aria-label", "Open command palette");
+    // Mac users see ⌘K; everyone else sees Ctrl+K (both bindings fire).
+    var modGlyph = /Mac|iPod|iPhone|iPad/i.test(navigator.platform || "")
+      ? '<span class="ba-side-cmdk-key">⌘</span>'
+      : '<span class="ba-side-cmdk-key ba-side-cmdk-key--w">Ctrl</span>';
+    cmdk.innerHTML =
+      '<svg class="ba-side-cmdk-ico" viewBox="0 0 24 24" width="14" height="14" ' +
+        'fill="none" stroke="currentColor" stroke-width="1.7" ' +
+        'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+        '<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.3-4.3"/>' +
+      '</svg>' +
+      '<span class="ba-side-cmdk-l">Search anything…</span>' +
+      '<span class="ba-side-cmdk-kbd">' +
+        modGlyph +
+        '<span class="ba-side-cmdk-key">K</span>' +
+      '</span>';
+    cmdk.addEventListener("click", function (e) {
+      e.preventDefault();
+      if (typeof window.__baCmdkOpen === "function") {
+        // Same-webview: open immediately, no Python round-trip.
+        window.__baCmdkOpen("");
+      } else {
+        send("cmdk-open");
+      }
+    });
+    aside.appendChild(cmdk);
+
     // Primary nav
     var nav = document.createElement("nav");
     nav.className = "ba-side-nav";
