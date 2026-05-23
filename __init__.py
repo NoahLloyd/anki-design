@@ -222,6 +222,11 @@ def on_webview_will_set_content(web_content: WebContent, context: Optional[Any])
         # even in light mode. The heavy homepage layout in theme.css is
         # scoped to .ba-home / .ba-over and won't touch the reviewer.
         web_content.css.append(f"{WEB}/theme.css")
+        # Cmd-K palette is available on every themed surface (deck browser,
+        # overview, reviewer). cmdk.js owns the hotkey and the overlay DOM;
+        # the matching Python search backend lives in cmdk.py.
+        web_content.css.append(f"{WEB}/cmdk.css")
+        web_content.js.append(f"{WEB}/cmdk.js")
     if isinstance(context, DeckBrowser):
         web_content.css.append(f"{WEB}/heatmap.css")
         web_content.js.append(f"{WEB}/heatmap.js")
@@ -832,6 +837,29 @@ def _on_js_message(handled, message, context):
         return handled
     cmd = message[3:]
     try:
+        if cmd.startswith("cmdk-search:"):
+            try:
+                from . import cmdk as _cmdk
+                _cmdk.handle_search(cmd[len("cmdk-search:"):])
+            except Exception:
+                pass
+            return (True, None)
+        if cmd.startswith("cmdk-do:"):
+            try:
+                from . import cmdk as _cmdk
+                _cmdk.handle_do(cmd[len("cmdk-do:"):])
+            except Exception:
+                pass
+            return (True, None)
+        if cmd == "cmdk-open":
+            # Close any open embed so the palette renders above the deck
+            # homepage instead of behind the embed's Qt overlay.
+            try:
+                from . import cmdk as _cmdk
+                _cmdk.open_from_outside("")
+            except Exception:
+                pass
+            return (True, None)
         if cmd == "embed-ready":
             # addcard.js fires this from reveal() once the editor body is
             # ready to fade in. We drop the anti-flash curtain that
@@ -2071,6 +2099,30 @@ def _setup_sidebar_shortcuts() -> None:
         sc = QShortcut(QKeySequence(","), mw)
         sc.setAutoRepeat(False)
         sc.activated.connect(_open_settings)
+    except Exception:
+        pass
+
+    # Cmd-K / Ctrl-K — Command palette. cmdk.js already binds the hotkey
+    # inside every themed webview (deck browser, overview, reviewer), but
+    # when focus is on a Qt-native widget (Add Cards embed editor field,
+    # Browser table, a dialog) the webview never sees the keydown. Bind a
+    # Qt-level shortcut on mw so the palette is reachable from anywhere.
+    def _open_cmdk_palette() -> None:
+        try:
+            from . import cmdk as _cmdk
+            _cmdk.open_from_outside("")
+        except Exception:
+            pass
+    try:
+        from aqt.qt import QShortcut, QKeySequence, Qt
+        for seq in ("Ctrl+K", "Meta+K", "Ctrl+Shift+P", "Meta+Shift+P"):
+            try:
+                sc = QShortcut(QKeySequence(seq), mw)
+                sc.setAutoRepeat(False)
+                sc.setContext(Qt.ShortcutContext.ApplicationShortcut)
+                sc.activated.connect(_open_cmdk_palette)
+            except Exception:
+                continue
     except Exception:
         pass
 
