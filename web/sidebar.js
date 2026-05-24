@@ -75,6 +75,17 @@
   }
 
   // ---- nav rows -------------------------------------------------------- //
+  // Sync row needs an extra <svg> for the success-check overlay that fades
+  // in over the cloud icon when a sync completes with real changes. Both
+  // glyphs live in a positioned wrapper so we can cross-fade them without
+  // shifting the row layout.
+  var SYNC_CHECK_SVG =
+    '<svg class="ba-sync-check" viewBox="0 0 24 24" width="14" height="14" ' +
+      'fill="none" stroke="currentColor" stroke-width="2.2" ' +
+      'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      '<path d="M5 12.5l4.5 4.5L19 7"/>' +
+    '</svg>';
+
   function makeRow(it) {
     var b = document.createElement("button");
     b.type = "button";
@@ -82,8 +93,14 @@
     b.setAttribute("data-cmd", it.cmd);
     if (it.active) b.setAttribute("data-active", "true");
     if (it.cls) b.classList.add(it.cls);
-    var inner = iconSVG(it.cmd)
-              + '<span class="ba-side-l">' + it.label + "</span>";
+    var iconBlock = (it.cmd === "sync")
+      ? '<span class="ba-sync-iconwrap">' + iconSVG(it.cmd) + SYNC_CHECK_SVG + '</span>'
+      : iconSVG(it.cmd);
+    // .ba-side-l-text wraps the label so the sync row can rewrite it in
+    // place ("Sync" → "Syncing…" → "Synced") without touching siblings.
+    var inner = iconBlock
+              + '<span class="ba-side-l"><span class="ba-side-l-text">'
+              + it.label + '</span></span>';
     if (it.dot) inner += '<span class="ba-side-dot"></span>';
     if (it.key) inner += '<span class="ba-side-key">' + it.key + "</span>";
     b.innerHTML = inner;
@@ -378,13 +395,74 @@
       else els[i].removeAttribute("data-active");
     }
   }
+  // The sync row drives a small state machine:
+  //
+  //   idle  ──click──▶  active  ──result(ok)──▶  reveal-ok   ──▶  idle
+  //                          └──result(noop)──▶ reveal-noop ──▶  idle
+  //                          └──result(error)─▶ reveal-err  ──▶  idle
+  //
+  // applySync() owns the standing class state (pending/full/active) and
+  // the resting label. applySyncResult() owns the brief "Synced" reveal
+  // — and during that reveal it locks the label so applySync() can't
+  // overwrite it from a parallel `gui_hooks.sync_did_finish` refresh.
+  var syncResultTimer = null;
+
   function applySync(state) {
     var el = document.querySelector('.ba-side-item[data-cmd="sync"]');
     if (!el) return;
-    el.classList.remove("ba-sync-pending", "ba-sync-full", "ba-sync-active");
+    var revealing = el.hasAttribute("data-sync-result");
+    var text = el.querySelector(".ba-side-l-text");
+    el.classList.remove("ba-sync-pending", "ba-sync-full");
+    // Keep the spin going while the reveal plays — it cross-fades into
+    // the check, no abrupt stop.
+    if (!revealing) el.classList.remove("ba-sync-active");
     if (state === "pending") el.classList.add("ba-sync-pending");
     else if (state === "full") el.classList.add("ba-sync-full");
-    else if (state === "active") el.classList.add("ba-sync-active");
+    else if (state === "active") {
+      el.classList.add("ba-sync-active");
+      if (text && !revealing) text.textContent = "Syncing…";
+    } else if (!revealing && text) {
+      text.textContent = "Sync";
+    }
+  }
+
+  function applySyncProgress(d) {
+    // Anki's `progress.normal_sync.stage` is a localized full sentence
+    // ("Checking…", "Uploading notes…") that would jitter the row width
+    // if shown directly. We stash it on a data attr for inspection /
+    // future use; the visible feedback is the spinning icon + "Syncing…"
+    // label, which is enough to convey "work is in flight."
+    if (!d) return;
+    var el = document.querySelector('.ba-side-item[data-cmd="sync"]');
+    if (!el) return;
+    if (d.stage) el.setAttribute("data-sync-stage", d.stage);
+    if (d.added) el.setAttribute("data-sync-added", d.added);
+    if (d.removed) el.setAttribute("data-sync-removed", d.removed);
+  }
+
+  function applySyncResult(kind) {
+    var el = document.querySelector('.ba-side-item[data-cmd="sync"]');
+    if (!el) return;
+    var text = el.querySelector(".ba-side-l-text");
+    el.setAttribute("data-sync-result", kind);
+    // Different reveals for "real changes happened" vs "heartbeat / no
+    // changes" vs "error" — see styles below for the actual motion.
+    if (kind === "ok" && text) text.textContent = "Synced";
+    else if (kind === "error" && text) text.textContent = "Sync failed";
+    // "noop" — keep the label as it was (usually "Syncing…"); we let it
+    // fade back to "Sync" with the icon's settle bounce.
+
+    var hold = (kind === "noop") ? 800 : 1800;
+    clearTimeout(syncResultTimer);
+    syncResultTimer = setTimeout(function () {
+      el.removeAttribute("data-sync-result");
+      el.classList.remove("ba-sync-active");
+      el.removeAttribute("data-sync-stage");
+      el.removeAttribute("data-sync-added");
+      el.removeAttribute("data-sync-removed");
+      var t = el.querySelector(".ba-side-l-text");
+      if (t) t.textContent = "Sync";
+    }, hold);
   }
 
   function inject() {
@@ -413,6 +491,12 @@
   window.__baSetSync = function (state) {
     pending.sync = state;
     applySync(state);
+  };
+  window.__baSetSyncProgress = function (d) {
+    applySyncProgress(d);
+  };
+  window.__baSetSyncResult = function (kind) {
+    applySyncResult(kind);
   };
 
   // Bootstrap from the <head>-embedded standing data (set by the addon

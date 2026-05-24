@@ -232,7 +232,20 @@
       evt.preventDefault();
       evt.stopPropagation();
     }
-    var anchor = evt && evt.currentTarget;
+    // The shared deck-list (__adDeckList.render) delegates clicks on the
+    // row container, so evt.currentTarget there is the whole list — too
+    // wide to anchor a menu off, which puts the menu at the bottom of the
+    // list instead of next to the clicked gear. Walk up from the real
+    // click target to the gear button first; fall back to currentTarget
+    // for the non-delegated callers (single-deck hero, Anki's native
+    // gear anchor, the congrats title).
+    var anchor = null;
+    if (evt) {
+      if (evt.target && evt.target.closest) {
+        anchor = evt.target.closest('.ad-list-gear');
+      }
+      if (!anchor) anchor = evt.currentTarget;
+    }
     // Toggle off if clicking the same gear that opened the menu.
     if (CURRENT && CURRENT._anchor === anchor) {
       close();
