@@ -420,7 +420,7 @@ body::before {
 }
 .ba-home #studiedToday { display: none !important; }
 
-/* ---------------- PRACTICE — heatmap-only section below the decks --------- */
+/* ---------------- PRACTICE — pulse strip + heatmap below the decks --------- */
 .ba-practice {
   width: 100%;
   max-width: var(--rf-measure);
@@ -441,6 +441,350 @@ body::before {
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--rf-ink-faint);
+}
+
+/* ---------------- PULSE — today panel + separated streak -------------------
+   Two stacked elements above the heatmap:
+     • .ba-today  — soft-bg card with totals header + hourly session bars
+     • .ba-streak — flat editorial chip with the streak count
+   They sit inside .ba-practice so they share the section's width and
+   entrance with the heatmap, and render the same in single-deck and
+   multi-deck mode (no per-mode branches).
+
+   Why two elements (not one): today's stats describe *immediate effort*
+   (cards reviewed in this session, time spent right now). The streak
+   describes *long-term consistency* — same theme as the heatmap below.
+   Pairing the streak with the heatmap, rather than with today, makes the
+   visual story read top-to-bottom as: deck list → what you did today
+   → what you've been doing all along. */
+.ba-pulse {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 22px;
+  padding: 4px 0 22px;
+  margin: 0;
+}
+
+/* ---------- TODAY PANEL ---------- */
+.ba-today {
+  background: var(--rf-panel);
+  border: 1px solid var(--rf-line);
+  border-radius: 14px;
+  padding: 20px 26px 22px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+/* Header: "47 CARDS · 12 MIN" — exact .ba-cg-result vocabulary, scaled
+   down so it reads as a panel header rather than a top-of-page hero.
+   align-items: center keeps the unit labels and mid-dot on the same y-
+   line as the digit middles. */
+.ba-today-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 18px;
+  font-family: var(--rf-serif);
+  color: var(--rf-ink);
+  line-height: 1;
+  letter-spacing: -0.018em;
+  font-weight: 500;
+  font-size: 30px;
+  /* When the user hovers a bar, fade the header to make room for the
+     per-hour tooltip that lands in the same y-area. The header
+     reappears the instant the hover ends. Cleaner than the alternative
+     of pushing the chart down 60px just so a tooltip can clear the
+     totals on the rare tall-bar case. */
+  transition: opacity 180ms ease;
+}
+.ba-today:has(.ba-today-bar-col:hover) .ba-today-head {
+  opacity: 0;
+}
+.ba-today-n {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1, "lnum" 1;
+}
+/* Same -2px trick as .ba-cg-result: keep the trailing unit tight against
+   its digit ("47 cards"). */
+.ba-today-n + .ba-today-u {
+  margin-left: -2px;
+}
+.ba-today-u,
+.ba-today-sep {
+  font-family: var(--rf-sans);
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 600;
+  color: var(--rf-ink-faint);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+.ba-today-sep {
+  margin: 0 4px;
+}
+
+/* Bars: thin verticals, one per hour from first studied → current. Each
+   hour is its own column wrapper so the bar can grow from the baseline
+   while a small count label rides at the top of the column without ever
+   colliding with the bar. The column heights are fixed; bar heights are
+   set inline as a percentage capped at 88% so the count above always has
+   breathing room.
+
+   Layout: a flex row of columns. Columns get a generous width budget
+   (max ~38px) so a 1-hour session reads as a confident single bar
+   rather than a sliver lost in the panel. Bars push to the LEFT edge
+   so the visualization always reads chronologically from the first
+   studied hour. */
+.ba-today-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  height: 72px;
+  margin: 4px 0 10px;
+  justify-content: flex-start;
+}
+.ba-today-bar-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 1 1 0;
+  min-width: 14px;
+  max-width: 38px;
+  height: 100%;
+  position: relative;
+}
+.ba-today-bar-count {
+  /* Tiny tabular sans count riding the top of each column; sits just
+     above the bar. Uses --rf-ink-dim so it reads as a quiet annotation
+     rather than competing with the panel header. */
+  font: 600 9.5px/1 var(--rf-sans);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1, "lnum" 1;
+  color: var(--rf-ink-dim);
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+  min-height: 9.5px;
+  /* Don't reserve space when the count is empty (zero-hour). */
+  opacity: 1;
+}
+.ba-today-bar-col:has(.ba-today-bar.is-empty) .ba-today-bar-count {
+  /* Hide the count above empty-hour stubs — there's nothing to count
+     and the slot would just print a blank gap. */
+  opacity: 0;
+}
+.ba-today-bar {
+  width: 100%;
+  /* Bar color follows whichever heatmap palette the user picked in
+     settings — same token the heatmap below uses for its peak-intensity
+     cells. Picking accent/green/teal/violet/rose/amber for the heatmap
+     re-colors the bars in lockstep, so the section reads as one
+     coordinated piece instead of two unrelated visualisations. */
+  background: var(--rf-hm-l4);
+  border-radius: 3px 3px 0 0;
+  transition: background 160ms ease, filter 160ms ease;
+}
+/* Hover lift: brighten the bar so the user can see which column the
+   tooltip belongs to, while the count label above warms to ink to
+   reinforce the focus. Light/dark themes both have headroom on a
+   brightness(1.15) — l4 is the heatmap's most-saturated shade, not
+   already white, so it still has somewhere to go. */
+.ba-today-bar-col:hover .ba-today-bar {
+  filter: brightness(1.15);
+}
+.ba-today-bar-col:hover .ba-today-bar-count {
+  color: var(--rf-ink);
+}
+
+/* ---------- TOOLTIP ----------
+   Custom hover card above each bar with hour + cards + minutes. Built
+   from real DOM (not the browser's title attr) so the typography and
+   chrome match the page — cream panel bg, subtle border, soft shadow,
+   tiny down-arrow pointing at the bar. Slides up a few pixels on
+   reveal so the hover feels alive without bouncing. */
+.ba-today-bar-tip {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  opacity: 0;
+  pointer-events: none;
+  background: var(--rf-panel);
+  border: 1px solid var(--rf-line-2);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08),
+              0 1px 2px  rgba(0, 0, 0, 0.04);
+  padding: 9px 13px 10px;
+  border-radius: 8px;
+  white-space: nowrap;
+  text-align: center;
+  z-index: 10;
+  transition: opacity 160ms ease, transform 200ms cubic-bezier(.2,.8,.2,1);
+}
+.ba-today-bar-col:hover .ba-today-bar-tip {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  transition-delay: 60ms; /* tiny pause so quick scrub-overs don't strobe */
+}
+.ba-today-bar-tip-h {
+  display: block;
+  font: 600 9.5px/1 var(--rf-sans);
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--rf-ink-faint);
+  margin-bottom: 6px;
+}
+.ba-today-bar-tip-d {
+  display: block;
+  font: 500 12.5px/1 var(--rf-sans);
+  color: var(--rf-ink-dim);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1, "lnum" 1;
+  letter-spacing: -0.005em;
+}
+.ba-today-bar-tip-d b {
+  font-weight: 700;
+  color: var(--rf-ink);
+}
+/* Down-pointing arrow attached to the tooltip — two stacked pseudos
+   build a 1px line + fill triangle so the arrow inherits the same
+   border/fill as the tooltip body. */
+.ba-today-bar-tip::before,
+.ba-today-bar-tip::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+}
+.ba-today-bar-tip::before {
+  border-top: 7px solid var(--rf-line-2);
+}
+.ba-today-bar-tip::after {
+  margin-top: -1px;
+  border-top: 7px solid var(--rf-panel);
+}
+/* Empty-hour stub — a thin dim tick along the baseline. */
+.ba-today-bar.is-empty {
+  background: var(--rf-line-2);
+  border-radius: 999px;
+  /* Override the inline height with a fixed thin stub so empty hours
+     visually collapse to a "tick" rather than a tiny bar. */
+  height: 3px !important;
+  width: 60%;
+}
+
+/* Hour labels under the bars — first hour at the left, "NOW" at the
+   right, mirroring the bars container. Small uppercase sans, dim.
+   The --solo variant centers a single "NOW" when the session sits in
+   one hour, since "5 PM ... NOW" would be redundant. */
+.ba-today-labels {
+  display: flex;
+  justify-content: space-between;
+  font: 600 9.5px/1 var(--rf-sans);
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--rf-ink-faint);
+}
+.ba-today-labels--solo {
+  justify-content: flex-start;
+  /* Align the "NOW" label under the (single) bar column at the left,
+     not the panel's right edge. Approximate column width = 38px max. */
+  padding-left: 6px;
+}
+.ba-today-now {
+  color: var(--rf-ink-dim);
+}
+
+/* Empty state — when today has 0 reviews. Italic serif, quiet, takes
+   the place of the bar strip so the panel doesn't go hollow. */
+.ba-today-empty {
+  font: italic 400 14px/1.5 var(--rf-serif);
+  color: var(--rf-ink-dim);
+  padding: 10px 0 6px;
+}
+
+/* ---------- STREAK (separate flat element) ----------
+   Fire glyph + number, no caption. Uses sans bold instead of the
+   today panel's serif so the streak reads as a distinct second voice
+   on the page — the panel is editorial, the streak is a confident
+   badge. Color: --rf-hm-l4 throughout so the icon and digits track
+   whichever heatmap palette the user picked in settings; the whole
+   pulse section then reads as one coordinated palette instead of
+   three independently coloured pieces. */
+.ba-streak {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 8px 0 2px;
+  color: var(--rf-hm-l4);
+}
+.ba-streak-fire {
+  width: 36px;
+  height: 36px;
+  flex: none;
+  color: var(--rf-hm-l4);
+  /* Pivot near the base so the flicker reads as the tip dancing,
+     not the whole glyph drifting. */
+  transform-origin: 50% 82%;
+  animation: ba-streak-flicker 4.4s ease-in-out infinite;
+}
+.ba-streak-n {
+  font: 700 36px/1 var(--rf-sans);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1, "lnum" 1;
+  letter-spacing: -0.015em;
+  color: var(--rf-hm-l4);
+}
+/* Zero-streak: drop the warm accent and hide the fire — nothing earned
+   yet, nothing to celebrate. The number alone in faint ink reads as
+   "0" without any visual fanfare. */
+.ba-streak.is-zero {
+  color: var(--rf-ink-faint);
+}
+.ba-streak.is-zero .ba-streak-n {
+  color: var(--rf-ink-faint);
+  font-weight: 600;
+}
+.ba-streak.is-zero .ba-streak-fire {
+  display: none;
+}
+@keyframes ba-streak-flicker {
+  0%, 100% { transform: scale(1)    rotate(0);       opacity: 1;    }
+  35%      { transform: scale(0.96) rotate(-1.5deg); opacity: 0.92; }
+  65%      { transform: scale(1.03) rotate(1.5deg);  opacity: 1;    }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ba-streak-fire { animation: none; }
+}
+
+/* Pulse and heatmap stack with breathing space — no hairline. */
+.ba-home .ba-practice .ba-pulse + .rf-heatmap {
+  padding-top: 16px !important;
+  margin-top: 0 !important;
+}
+
+/* Match the practice section's staggered entrance. */
+.ba-home .ba-pulse {
+  animation: ba-rise 0.55s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: 0.18s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ba-home .ba-pulse { animation: none; }
+}
+
+/* Responsive — keep the panel shape, just tighten typography and bars
+   at narrow widths. */
+@media (max-width: 620px) {
+  .ba-today        { padding: 16px 18px 18px; }
+  .ba-today-head   { font-size: 24px; }
+  .ba-today-bars   { height: 52px; }
+  .ba-streak-n     { font-size: 24px; }
 }
 
 /* Anki's "Studied N cards today" caption — hide; superfluous next to deck list. */

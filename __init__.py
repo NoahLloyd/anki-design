@@ -674,9 +674,14 @@ def on_deck_browser_will_render_content(
             hero = _single_deck_hero()
     except Exception:
         pass
+    # Pulse strip (cards today · lifetime · streak) leads the practice
+    # section. Same shape in single-deck and multi-deck because it sits
+    # inside .ba-practice (which is the same in both modes).
+    pulse = _pulse_html()
+    practice_inner = pulse + heatmap
     practice = (
-        f'<section class="ba-practice">{heatmap}</section>'
-        if heatmap else ""
+        f'<section class="ba-practice">{practice_inner}</section>'
+        if practice_inner else ""
     )
     content.stats = hero + content.stats + practice
 
@@ -1277,6 +1282,195 @@ def _single_deck_hero() -> str:
         """
     except Exception:
         return ""
+
+
+def _pulse_html() -> str:
+    """Today panel (totals + hourly session-bars) and a separated streak
+    element. Renders for both single-deck and multi-deck modes; sits
+    inside .ba-practice so it inherits the section's width and entry
+    animation.
+
+    Today panel: a soft-bg card holding two things — an editorial header
+    of "N cards · M min" in the .ba-cg-result mixed-type vocabulary, and
+    below it a histogram of cards-per-hour from the user's first studied
+    hour through the current hour. Empty hours mid-session render as a
+    short dim stub so breaks read as gaps, not as missing data.
+
+    Streak: a separate flat element (no panel chrome) below the today
+    panel — thematically grouped with the heatmap below, since both
+    speak to long-term consistency rather than immediate effort."""
+    try:
+        s = _standing()
+    except Exception:
+        return ""
+    today_total = int(s.get("today", 0) or 0)
+    streak = int(s.get("streak", 0) or 0)
+    try:
+        mins = int(_minutes_today() or 0)
+    except Exception:
+        mins = 0
+    by_hour = _today_by_hour()
+    rollover = _rollover_hour()
+
+    # Build the streak chip once — always present (a streak persists across
+    # days of inactivity until it actually breaks).
+    zs = " is-zero" if streak == 0 else ""
+    # Heroicons "fire" (solid) — a recognizable two-arc flame with an
+    # inner ember. Reads as fire at any size without the cartoon-emoji
+    # vibe; matches the addon's filled-icon family weight.
+    fire_svg = (
+        '<svg class="ba-streak-fire" viewBox="0 0 24 24" '
+        'fill="currentColor" aria-hidden="true">'
+        '<path fill-rule="evenodd" clip-rule="evenodd" '
+        'd="M12.963 2.286a.75.75 0 0 0-1.071-.136 9.742 9.742 0 0 0-3.539 '
+        '6.177A7.547 7.547 0 0 1 6.648 6.61a.75.75 0 0 0-1.152-.082A9 9 0 '
+        '1 0 15.68 4.534a7.46 7.46 0 0 1-2.717-2.248zM15.75 14.25a3.75 '
+        '3.75 0 1 1-7.313-1.172c.628.465 1.35.81 2.133 1A5.99 5.99 0 0 1 '
+        '12.366 10.4a3.75 3.75 0 0 1 3.384 3.85z"/>'
+        '</svg>'
+    )
+    streak_html = (
+        f'<div class="ba-streak{zs}" role="group" '
+        f'aria-label="{streak} day streak">'
+        f'{fire_svg}'
+        f'<span class="ba-streak-n">{streak:,}</span>'
+        f'</div>'
+    )
+
+    # If there are no reviews today, omit the today panel entirely —
+    # an empty card just to say "nothing yet" reads as filler, and the
+    # streak + heatmap below already tell the relevant story for an
+    # un-studied day.
+    if not by_hour:
+        return f'<div class="ba-pulse">{streak_html}</div>'
+
+    # Build the today panel body. by_hour is guaranteed non-empty here
+    # because we returned early above when it was empty.
+    first_h = min(by_hour.keys())
+    # "Current hour" — where we should end the chart. If the user has a row
+    # in an hour past `now` (e.g. dev-fixture timestamp drift), respect that
+    # as the right edge so the data doesn't get clipped.
+    shift = _day_shift_seconds()
+    now_h_within = int(((time.time() + shift) % 86400) / 3600)
+    last_h = max(now_h_within, max(by_hour.keys()))
+    hours = list(range(first_h, last_h + 1))
+    max_count = max((n for n, _ in by_hour.values()), default=1) or 1
+    # Render bars. Each bar is a column wrapper holding a count label that
+    # rides above the bar, the bar itself, and a custom hover tooltip with
+    # hour + cards + minutes. The tooltip is plain DOM (not the browser's
+    # title attr) so we can style it to match the page.
+    bar_html = []
+    for h in hours:
+        n, ms = by_hour.get(h, (0, 0))
+        # Cap heights at 88% so the count label above always has room
+        # without the bar visually colliding with it; empty hours get a
+        # tiny stub so breaks remain visible as ticks.
+        if n > 0:
+            pct = max(8.0, (n / max_count) * 88.0)
+        else:
+            pct = 4.0
+        cls = "ba-today-bar" + ("" if n > 0 else " is-empty")
+        count_str = str(n) if n > 0 else ""
+        hour_label = _format_hour_of_day((rollover + h) % 24)
+        # Minutes for the tooltip — sub-30s rounds to "<1", otherwise
+        # rounded minutes. We don't show a tooltip on empty stubs.
+        if n > 0:
+            if ms < 30_000:
+                mins_str = "<1 min"
+            else:
+                mins_str = f"{round(ms / 60_000)} min"
+            tip_html = (
+                f'<span class="ba-today-bar-tip" aria-hidden="true">'
+                f'<span class="ba-today-bar-tip-h">{hour_label}</span>'
+                f'<span class="ba-today-bar-tip-d">'
+                f'<b>{n:,}</b> cards · <b>{mins_str}</b>'
+                f'</span>'
+                f'</span>'
+            )
+        else:
+            tip_html = ""
+        bar_html.append(
+            f'<span class="ba-today-bar-col">'
+            f'{tip_html}'
+            f'<span class="ba-today-bar-count">{count_str}</span>'
+            f'<span class="{cls}" style="height:{pct:.1f}%"></span>'
+            f'</span>'
+        )
+    bars = "".join(bar_html)
+    # Labels: collapse to a single centered "NOW" when the session sits in
+    # one hour (the user-just-started case). Otherwise the start hour
+    # anchors the left and "NOW" the right.
+    if first_h == last_h:
+        labels = (
+            f'<div class="ba-today-labels ba-today-labels--solo">'
+            f'<span class="ba-today-now">NOW</span>'
+            f'</div>'
+        )
+    else:
+        first_label = _format_hour_of_day((rollover + first_h) % 24)
+        labels = (
+            f'<div class="ba-today-labels">'
+            f'<span>{first_label}</span>'
+            f'<span class="ba-today-now">NOW</span>'
+            f'</div>'
+        )
+
+    # Header row: editorial mixed-type totals. Uses the .ba-cg-result
+    # vocabulary (serif numbers + sans uppercase units + mid-dot).
+    head = (
+        f'<div class="ba-today-head">'
+        f'<span class="ba-today-n">{today_total:,}</span>'
+        f'<span class="ba-today-u">cards</span>'
+        f'<span class="ba-today-sep">·</span>'
+        f'<span class="ba-today-n">{mins:,}</span>'
+        f'<span class="ba-today-u">min</span>'
+        f'</div>'
+    )
+
+    return f"""
+    <div class="ba-pulse">
+      <section class="ba-today" aria-label="Your study today">
+        {head}
+        <div class="ba-today-bars">{bars}</div>
+        {labels}
+      </section>
+      {streak_html}
+    </div>
+    """
+
+
+def _today_by_hour() -> Dict[int, tuple]:
+    """Cards reviewed in each hour-within-today, keyed by hour-offset from
+    the day rollover. Returns {hour: (card_count, total_time_ms)} so the
+    today-panel hover tooltips can show per-hour minutes alongside counts
+    without a second SQL round-trip. Empty dict on any error."""
+    try:
+        shift = _day_shift_seconds()
+        today_idx = int((time.time() + shift) // 86400)
+        rows = mw.col.db.all(
+            "select cast(((id/1000 + ?) - ? * 86400) / 3600 as int) as hr, "
+            "       count(), sum(time) "
+            "from revlog "
+            "where cast((id/1000 + ?) / 86400 as int) = ? "
+            "group by hr",
+            shift, today_idx, shift, today_idx,
+        )
+        return {int(h): (int(n), int(t or 0)) for h, n, t in rows}
+    except Exception:
+        return {}
+
+
+def _format_hour_of_day(h: int) -> str:
+    """12-hour time label with AM/PM suffix only at the boundary. `h` is
+    a 0..23 hour-of-day in user local time."""
+    h = h % 24
+    if h == 0:
+        return "12 AM"
+    if h == 12:
+        return "12 PM"
+    if h < 12:
+        return f"{h} AM"
+    return f"{h - 12} PM"
 
 
 def _minutes_today() -> int:
