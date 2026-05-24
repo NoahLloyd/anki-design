@@ -78,9 +78,12 @@ body.ba-with-side {
      Bumping to 1.4 and trimming vertical padding keeps the overall height
      unchanged while giving descenders the room they need. */
   padding: 6px 10px;
-  background: var(--rf-paper-inset, rgba(255, 255, 255, 0.03));
-  border: 1px solid var(--rf-line);
-  border-radius: 8px;
+  /* !important: the congrats page is a Svelte page whose own button-reset
+     CSS lands in <head> AFTER ours and would wipe the input look. The
+     decks page has no such reset so it's untouched. */
+  background: var(--rf-paper-inset, rgba(255, 255, 255, 0.03)) !important;
+  border: 1px solid var(--rf-line) !important;
+  border-radius: 8px !important;
   color: var(--rf-ink-faint);
   font: 500 12px/1.4 var(--rf-sans);
   letter-spacing: 0.005em;
@@ -91,7 +94,8 @@ body.ba-with-side {
 }
 :root:not([data-rf-theme="dark"]) .ba-side-cmdk,
 :root[data-rf-theme="light"] .ba-side-cmdk {
-  background: rgba(0, 0, 0, 0.025);
+  background: rgba(31, 29, 24, 0.05) !important;
+  border-color: rgba(31, 29, 24, 0.12) !important;
 }
 .ba-side-cmdk:hover {
   color: var(--rf-ink-dim);

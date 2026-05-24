@@ -182,13 +182,17 @@
     var deckName = d.deckName || 'this deck';
     var wrap = document.createElement('div');
     wrap.className = 'ba-cg';
+    // Custom-study link is offered exactly once. When otherDecks is empty,
+    // the "Everything's clear" block already includes it; the foot strip
+    // would just repeat the same call to action.
+    var hasOthers = !!(d.otherDecks && d.otherDecks.length);
     wrap.innerHTML = ''
       + headHTML(deckName, d.deckId || 0)
       + resultHTML(d)
       + accuracyHTML(d)
       + asideHTML(d)
       + decksBlockHTML(d.otherDecks)
-      + footHTML();
+      + (hasOthers ? footHTML() : '');
 
     // Render the deck list via the shared component so this view uses the
     // EXACT same code path as the home page. Click handlers (chevron, gear,
