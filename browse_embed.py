@@ -56,6 +56,16 @@ SIDEBAR_DOCK_MIN = 220
 SIDEBAR_DOCK_MAX = 480  # past this the central pane (table + editor) starts to look empty
 CENTRAL_MIN = 420  # search + card table + editor pane need this much
 
+# Inner Browser splitter (search+table | editor). Anki's restoreSplitter
+# call ("editor3") often hands back [all, 0] for a fresh profile, which
+# leaves the editor pane invisible — and setChildrenCollapsible(False)
+# doesn't save us because the editor container (verticalLayoutWidget) has
+# no minimum width, so QSplitter happily shrinks it past zero. We give
+# the editor side a real minimum and force a sensible initial split.
+EDITOR_MIN = 320   # narrowest the field area stays legible
+EDITOR_PREF = 460  # default share on first open
+TABLE_MIN = 360    # card table + search bar need at least this much
+
 
 def _clamp_splitter(splitter: "QSplitter", central: Any) -> None:
     """Re-set sizes after a drag so the docks stay within [MIN, MAX] AND
@@ -85,6 +95,26 @@ def _clamp_splitter(splitter: "QSplitter", central: Any) -> None:
                 splitter.blockSignals(False)
     except Exception:
         pass
+
+
+def _apply_inner_split(inner: "QSplitter") -> None:
+    """Force a sensible [table | editor] split on the Browser's inner
+    splitter. Deferred via QTimer so inner.width() reflects the laid-out
+    overlay, not the construction-time 640px default. Without this the
+    editor pane shows up at 0px wide and looks 'missing'."""
+
+    def _set() -> None:
+        try:
+            avail = inner.width() - inner.handleWidth()
+            if avail <= 0:
+                return
+            editor_w = max(EDITOR_MIN, min(EDITOR_PREF, avail // 2))
+            table_w = max(TABLE_MIN, avail - editor_w)
+            inner.setSizes([table_w, editor_w])
+        except Exception:
+            pass
+
+    QTimer.singleShot(0, _set)
 
 
 def _apply_initial_splitter_sizes(splitter: "QSplitter", central: Any) -> None:
@@ -308,6 +338,54 @@ def open_inline(parent_mw: Any = None) -> None:
             pass
 
         central = br.centralWidget()
+
+        # Inner splitter inside central: [search+table | editor]. Three
+        # things have to be true for the editor pane to behave like a real
+        # sidebar:
+        #
+        #   1. It needs a meaningful minimum width — its parent widget
+        #      (verticalLayoutWidget) has min=0 in Anki's .ui, so
+        #      setChildrenCollapsible(False) doesn't actually stop a drag
+        #      from shrinking the editor to zero.
+        #   2. The initial split has to be non-degenerate — restoreSplitter
+        #      ("editor3") routinely hands back [all, 0] for fresh profiles
+        #      and the editor disappears on open.
+        #   3. The pane has to stay visible across selection changes —
+        #      Browser.on_all_or_selected_rows_changed calls
+        #      `splitter.widget(1).setVisible(self.singleCard)` via the
+        #      @ensure_editor_saved decorator, which defers the call
+        #      through Editor.call_after_note_saved. Overriding the method
+        #      can't catch that race, so we patch setVisible on the widget
+        #      itself to ignore False.
+        try:
+            inner = getattr(br.form, "splitter", None)
+            if (
+                inner is not None
+                and inner.count() == 2
+                and inner.orientation() == Qt.Orientation.Horizontal
+            ):
+                table_side = inner.widget(0)
+                editor_side = inner.widget(1)
+                table_side.setMinimumWidth(TABLE_MIN)
+                editor_side.setMinimumWidth(EDITOR_MIN)
+                # Pin both the splitter pane AND the editor's own widget
+                # (Editor.set_note(None, hide=True) calls self.widget.hide()
+                # — which in Browser mode is self.form.fieldsArea — so even
+                # with the splitter pane forced visible, fieldsArea would
+                # collapse to invisible whenever the selection cleared).
+                for w in (editor_side, getattr(br.form, "fieldsArea", None)):
+                    if w is None:
+                        continue
+                    _orig = w.setVisible
+
+                    def _keep_visible(_v: bool, _f=_orig) -> None:
+                        _f(True)
+
+                    w.setVisible = _keep_visible  # type: ignore[assignment]
+                    w.setVisible(True)
+                _apply_inner_split(inner)
+        except Exception:
+            pass
 
         # Browser attaches its sidebar tree (decks / tags / saved searches)
         # as a QDockWidget directly to the QMainWindow, NOT inside
