@@ -303,12 +303,11 @@
       '</span>';
     cmdk.addEventListener("click", function (e) {
       e.preventDefault();
-      if (typeof window.__baCmdkOpen === "function") {
-        // Same-webview: open immediately, no Python round-trip.
-        window.__baCmdkOpen("");
-      } else {
-        send("cmdk-open");
-      }
+      // Always route through Python so it can pick the right host: mw.web
+      // when there's no embed, or the dedicated cmdk_overlay when an embed
+      // (Browse/Add/Stats/Settings) is up. Opening __baCmdkOpen directly in
+      // mw.web would render the palette behind the embed.
+      send("cmdk-open");
     });
     aside.appendChild(cmdk);
 

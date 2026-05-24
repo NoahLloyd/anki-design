@@ -865,11 +865,22 @@ def _on_js_message(handled, message, context):
                 pass
             return (True, None)
         if cmd == "cmdk-open":
-            # Close any open embed so the palette renders above the deck
-            # homepage instead of behind the embed's Qt overlay.
+            # open_from_outside picks the right host: reviewer.web during
+            # review, the cmdk_overlay when an embed is active (so the
+            # palette floats above it), mw.web otherwise.
             try:
                 from . import cmdk as _cmdk
                 _cmdk.open_from_outside("")
+            except Exception:
+                pass
+            return (True, None)
+        if cmd == "cmdk-closed":
+            # The palette JS fires this on every close (Esc, click outside,
+            # item commit). Hide the cmdk_overlay frame if it was the host;
+            # a no-op when the palette was hosted in mw.web/reviewer.web.
+            try:
+                from . import cmdk_overlay
+                cmdk_overlay.close()
             except Exception:
                 pass
             return (True, None)
