@@ -1,0 +1,200 @@
+/* Anki Design — shared deck-list visual primitives.
+   The chevron / gear / row layout is identical between the home tree and
+   the congrats Keep-going list. Both pages render via __adDeckList.render()
+   so the DOM is byte-identical; the CSS below paints it. */
+
+/* Whole list container — no list semantics, just a column of rows. */
+.ad-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  text-align: left;
+}
+
+/* Browser default <button> chrome — and Anki's own `.fancy button:hover`
+   gradient + box-shadow — flat against the page in every state. We
+   override `:hover` and `:active` explicitly so the deck-name button
+   never paints a halo behind the text. */
+.ad-list button,
+.ad-list button:hover,
+.ad-list button:active,
+.ad-list button:focus {
+  --canvas: transparent !important;
+  background: transparent !important;
+  background-image: none !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+/* Row container: [chevron] [name] [counts] [gear].
+   No row-hover background — the wash + rounded corners read as a heavy
+   "card shadow" against the cream paper, which fights with the editorial
+   tone of the rest of the page. Hover affordance is carried by the inner
+   parts (name gets stronger, chevron gets full ink, gear fades in). */
+.ad-list-row {
+  display: grid;
+  grid-template-columns: 24px 1fr auto 28px;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 6px;
+}
+.ad-list-row:hover .ad-list-gear { opacity: 0.85; }
+
+/* Hidden (collapsed under a parent). */
+.ad-list-row-hidden { display: none !important; }
+
+/* Deck name button — borderless, reads as plain text, full-width clickable. */
+.ad-list-name {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  padding: 4px 4px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  color: var(--rf-ink);
+  font: 500 16px/1.25 var(--rf-serif);
+  letter-spacing: -0.005em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  transition: color 160ms ease;
+}
+/* Deck-name hover — a quiet underline tracking the text width. Reads as
+   "this is a link" without painting any boxy background behind the row. */
+.ad-list-row:hover .ad-list-name {
+  color: var(--rf-ink-strong);
+  text-decoration: underline;
+  text-decoration-color: var(--rf-line-2);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+}
+.ad-list-name:focus { outline: none; }
+.ad-list-name:focus-visible {
+  outline: 0;
+  text-decoration: underline;
+  text-decoration-color: var(--rf-ink-faint);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+}
+
+/* Filtered (dynamic) deck — Anki convention is italic + accent color. */
+.ad-list-row[data-filtered="true"] .ad-list-name {
+  color: var(--rf-accent, #6c8cff);
+  font-style: italic;
+}
+
+/* Sub-deck rows — dim, slightly smaller, indented by depth. */
+.ad-list-row[data-depth="1"] .ad-list-name,
+.ad-list-row[data-depth="2"] .ad-list-name,
+.ad-list-row[data-depth="3"] .ad-list-name {
+  font-weight: 400;
+  color: var(--rf-ink-dim);
+  font-size: 15px;
+}
+.ad-list-row[data-depth="1"] { padding-left: 30px; }
+.ad-list-row[data-depth="2"] { padding-left: 54px; }
+.ad-list-row[data-depth="3"] { padding-left: 78px; }
+
+/* Counts cluster on the right of the row. */
+.ad-list-counts {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 14px;
+  padding: 0 6px;
+  font: 500 13.5px/1 var(--rf-sans);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1, "lnum" 1;
+}
+.ad-list-counts span { min-width: 22px; text-align: right; }
+.ad-list-counts .new    { color: var(--rf-new); }
+.ad-list-counts .learn  { color: var(--rf-learn); }
+.ad-list-counts .review { color: var(--rf-due); }
+.ad-list-counts .zero   { color: var(--rf-ink-faint); font-weight: 400; }
+
+/* Chevron — 12px icon inside a 24px square hover target. Big enough to
+   land on by mouse, padded so the icon never crowds the deck name. */
+.ad-list-chev {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  border-radius: 6px;
+  color: var(--rf-ink-faint);
+  cursor: pointer;
+  text-decoration: none !important;
+  -webkit-user-select: none;
+  user-select: none;
+  transition: color 160ms ease, background 160ms ease,
+              transform 240ms cubic-bezier(.2, .8, .2, 1);
+}
+.ad-list-chev svg {
+  width: 12px;
+  height: 12px;
+  transform-origin: 50% 50%;
+  transition: transform 240ms cubic-bezier(.2, .8, .2, 1);
+}
+/* Hover lifts the icon, no bg pill — the row-hover wash already provides
+   the "this row is targeted" affordance, so a second background under the
+   chevron just stacks visual weight. */
+.ad-list-chev:hover { color: var(--rf-ink); }
+.ad-list-chev:focus { outline: none; }
+.ad-list-chev:focus-visible { outline: 2px solid var(--rf-line-2); outline-offset: 2px; }
+.ad-list-chev:active svg { transform: scale(0.88); }
+.ad-list-chev--collapsed svg { transform: rotate(-90deg); }
+.ad-list-chev--collapsed:active svg { transform: rotate(-90deg) scale(0.88); }
+
+/* Leaf placeholder — same footprint as a chevron so deck names line up
+   across siblings whether or not the row has a toggle. */
+.ad-list-chev--spacer {
+  cursor: default;
+  pointer-events: none;
+}
+
+/* Gear — 14px icon inside a 28px square hover target. Hidden until the
+   row is hovered, full opacity when the gear itself is hovered. The host
+   page is responsible for triggering the row-hover state since the row
+   container varies (tr.deck vs ba-cg-row). */
+.ad-list-gear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--rf-ink-faint);
+  opacity: 0;
+  transition: opacity 160ms ease, color 160ms ease, background 160ms ease;
+}
+.ad-list-gear-img {
+  width: 14px;
+  height: 14px;
+  display: block;
+  filter: invert(60%);
+  opacity: 0.85;
+  transition: filter 160ms ease, opacity 160ms ease;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-rf-theme="dark"]) .ad-list-gear-img { filter: invert(35%); }
+}
+:root[data-rf-theme="light"] .ad-list-gear-img { filter: invert(35%); }
+
+/* Direct hover lifts opacity; no bg pill (matches chevron). */
+.ad-list-gear:hover .ad-list-gear-img { opacity: 1; }
+.ad-list-gear:focus { outline: none; }
+.ad-list-gear:focus-visible { outline: 2px solid var(--rf-line-2); outline-offset: 2px; }
