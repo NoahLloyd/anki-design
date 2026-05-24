@@ -505,9 +505,9 @@ def search(query: str, seq: int) -> Dict[str, Any]:
 def _push_results(payload: Dict[str, Any]) -> None:
     """Eval the result payload into whichever webview currently holds the
     palette. We try the active reviewer webview first (palette can open
-    during review), then mw.web, then bottomWeb. Each webview gets its
-    own copy — cheap, and harmless when only one of them actually has
-    the palette open."""
+    during review), then mw.web, then the cmdk overlay webview (used when
+    an embed obscures mw.web). Each webview gets its own copy — cheap,
+    and harmless when only one of them actually has the palette open."""
     try:
         data = json.dumps(payload)
     except Exception:
@@ -522,6 +522,13 @@ def _push_results(payload: Dict[str, Any]) -> None:
     w = getattr(mw, "web", None)
     if w is not None and w not in targets:
         targets.append(w)
+    try:
+        from . import cmdk_overlay
+        ow = cmdk_overlay.webview()
+        if ow is not None and ow not in targets:
+            targets.append(ow)
+    except Exception:
+        pass
     for t in targets:
         try:
             t.eval(js)
@@ -840,27 +847,65 @@ def _dispatch_top_level(key: str) -> None:
 # --------------------------------------------------------------------------- #
 # Open the palette from outside the webview (Qt shortcut → JS toggle).
 # --------------------------------------------------------------------------- #
-def open_from_outside(initial: str = "") -> None:
-    """Open the palette over the currently-visible deck/reviewer webview.
+def _any_embed_open() -> bool:
+    """True if any inline embed (Add/Browse/Stats/Settings) is currently
+    overlaid on mw.web. The embeds expose a module-level `_state` dict; an
+    "overlay" key set to a non-None QFrame means the embed is showing."""
+    for mod_name in (
+        "addcard_embed", "browse_embed", "stats_embed", "settings_embed",
+    ):
+        try:
+            from importlib import import_module
+            mod = import_module("." + mod_name, __package__)
+            st = getattr(mod, "_state", None)
+            if isinstance(st, dict) and st.get("overlay") is not None:
+                return True
+        except Exception:
+            continue
+    return False
 
-    Close any inline embed (Add/Browse/Stats/Settings) first — those embeds
-    are Qt frames overlaid on top of mw.web, so a palette opened underneath
-    them is invisible. After teardown, the reviewer's own webview (when in
-    review state) gets the palette; otherwise it lands on mw.web.
+
+def open_from_outside(initial: str = "") -> None:
+    """Open the palette over the currently-visible surface.
+
+    Routing:
+      - In review state, the reviewer's webview gets the palette (mw.web
+        is hidden during review, and no embeds can be open).
+      - If an embed (Add/Browse/Stats/Settings) is up, render in the
+        dedicated `cmdk_overlay` so the palette floats above the embed.
+        (Embeds are Qt frames on top of mw.web; a palette in mw.web would
+        be invisible behind them.)
+      - Otherwise, the palette goes into mw.web as usual.
     """
     state = getattr(mw, "state", "") or ""
-    if state != "review":
-        # Tear down any embed so the deck-browser surface is the topmost
-        # widget on the central area before the palette renders.
-        _close_all_embeds()
 
-    target = None
     if state == "review":
         rv = getattr(mw, "reviewer", None)
-        if rv is not None:
-            target = getattr(rv, "web", None)
-    if target is None:
-        target = getattr(mw, "web", None)
+        target = getattr(rv, "web", None) if rv is not None else None
+        if target is None:
+            return
+        try:
+            js = (
+                "if (window.__baCmdkOpen) window.__baCmdkOpen("
+                + json.dumps(initial or "") + ");"
+            )
+            target.eval(js)
+        except Exception:
+            pass
+        return
+
+    if _any_embed_open():
+        # The overlay is a transparent webview parented to centralwidget;
+        # it raises itself above any embed so the palette is visible while
+        # the embed (Browse/Add/etc.) stays in place underneath.
+        try:
+            from . import cmdk_overlay
+            cmdk_overlay.open(initial)
+        except Exception:
+            pass
+        return
+
+    target = getattr(mw, "web", None)
     if target is None:
         return
     try:
