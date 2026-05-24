@@ -7,3 +7,7 @@ dist/
 .context/
 .claude/
 SUBMISSION.md
+# Local scratch output (screenshots from snap.sh, HTML dumps from dump.sh,
+# headless-Chrome captures for design iteration). Previously tracked
+# screenshots stay in history; new files in here are ignored.
+out/

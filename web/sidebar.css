@@ -533,10 +533,21 @@ body.ba-with-side {
 }
 
 /* ---------------------------- SYNC ----------------------------
-   Three states the sidebar reflects:
-   • pending  — local changes to push; soft accent dot, slow breathe
-   • full     — full re-sync required; amber dot (stronger signal, no pulse)
-   • active   — sync in progress; icon spins
+   Standing states on the Sync row:
+   • pending     — local changes to push; soft accent dot, slow breathe
+   • full        — full re-sync required; amber dot (stronger signal, no pulse)
+   • active      — sync in progress; icon spins, label morphs to "Syncing…"
+   Transient end-of-sync reveals (data-sync-result attribute):
+   • ok          — real changes synced; cloud icon cross-fades to a green
+                   check that pops in (overshoot), label morphs to "Synced",
+                   the row briefly tints success-green, then settles back.
+   • noop        — heartbeat; nothing changed. The cloud icon does a
+                   gentle "settle" bounce as the spin stops, label fades
+                   silently back to "Sync". No check, no color shift —
+                   the quietest possible "done."
+   • error       — icon tints red and shakes, label morphs to "Sync failed".
+                   The actual error detail still surfaces via Anki's
+                   handle_sync_error warning dialog.
    The dot lives at the row's right edge (next to the label) so it doesn't
    visually compete with the icon, and gets a faint ring matching the row
    background so it reads as a token rather than a colored speck. */
@@ -566,7 +577,46 @@ body.ba-with-side {
   box-shadow: 0 0 0 2px color-mix(in srgb,
                 var(--rf-learn) 22%, transparent);
 }
-/* Active sync — icon spins. */
+
+/* Icon wrap — stacks the cloud-spinner and the success-check in the same
+   14px box so they can cross-fade in place during the reveal. */
+.ba-side-item[data-cmd="sync"] .ba-sync-iconwrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+}
+.ba-side-item[data-cmd="sync"] .ba-sync-iconwrap > .ba-side-icon {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  transition: opacity 220ms ease, color 220ms ease;
+}
+.ba-side-item[data-cmd="sync"] .ba-sync-check {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  color: var(--rf-good, #34c759);
+  opacity: 0;
+  transform: scale(0.5);
+  transform-origin: 50% 50%;
+  pointer-events: none;
+}
+
+/* Label morph — cross-fade text changes ("Sync" ↔ "Syncing…" ↔ "Synced"). */
+.ba-side-item[data-cmd="sync"] .ba-side-l-text {
+  display: inline-block;
+  transition: color 220ms ease;
+}
+.ba-side-item[data-cmd="sync"].ba-sync-active .ba-side-l-text {
+  color: var(--rf-accent, #6c8cff);
+}
+
+/* Active sync — icon spins. (Stays on through the reveal so the rotation
+   doesn't snap back to 0deg the moment the check fades in.) */
 .ba-side-item[data-cmd="sync"].ba-sync-active .ba-side-icon {
   animation: ba-spin 1.4s linear infinite;
 }
@@ -581,9 +631,55 @@ body.ba-with-side {
   0%, 100% { opacity: 1;    transform: scale(1); }
   50%      { opacity: 0.55; transform: scale(0.88); }
 }
+
+/* ---- Reveal: OK (real changes happened) ---- */
+.ba-side-item[data-cmd="sync"][data-sync-result="ok"] > .ba-sync-iconwrap > .ba-side-icon {
+  opacity: 0;
+}
+.ba-side-item[data-cmd="sync"][data-sync-result="ok"] .ba-sync-check {
+  animation: ba-sync-check-in 420ms cubic-bezier(.34, 1.56, .64, 1) forwards;
+}
+.ba-side-item[data-cmd="sync"][data-sync-result="ok"] .ba-side-l-text {
+  color: var(--rf-good, #34c759);
+}
+@keyframes ba-sync-check-in {
+  0%   { opacity: 0; transform: scale(0.3) rotate(-8deg); }
+  60%  { opacity: 1; transform: scale(1.18) rotate(0deg); }
+  100% { opacity: 1; transform: scale(1) rotate(0deg); }
+}
+
+/* ---- Reveal: noop (heartbeat, nothing changed) ---- */
+.ba-side-item[data-cmd="sync"][data-sync-result="noop"] .ba-side-icon {
+  animation: ba-sync-settle 680ms cubic-bezier(.34, 1.56, .64, 1) forwards;
+}
+@keyframes ba-sync-settle {
+  /* Inherits the spin's current rotation, decelerates, gentle bounce, rest. */
+  0%   { transform: rotate(0deg)   scale(1); }
+  50%  { transform: rotate(180deg) scale(1.15); }
+  100% { transform: rotate(360deg) scale(1); }
+}
+
+/* ---- Reveal: error ---- */
+.ba-side-item[data-cmd="sync"][data-sync-result="error"] .ba-side-icon {
+  color: var(--rf-bad, #ff453a);
+  animation: ba-sync-shake 380ms ease-in-out forwards;
+}
+.ba-side-item[data-cmd="sync"][data-sync-result="error"] .ba-side-l-text {
+  color: var(--rf-bad, #ff453a);
+}
+@keyframes ba-sync-shake {
+  0%, 100% { transform: translateX(0); }
+  20%      { transform: translateX(-2.5px); }
+  60%      { transform: translateX(2.5px); }
+  80%      { transform: translateX(-1.5px); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ba-side-item[data-cmd="sync"].ba-sync-pending .ba-side-dot,
-  .ba-side-item[data-cmd="sync"].ba-sync-active .ba-side-icon {
+  .ba-side-item[data-cmd="sync"].ba-sync-active .ba-side-icon,
+  .ba-side-item[data-cmd="sync"][data-sync-result="ok"] .ba-sync-check,
+  .ba-side-item[data-cmd="sync"][data-sync-result="noop"] .ba-side-icon,
+  .ba-side-item[data-cmd="sync"][data-sync-result="error"] .ba-side-icon {
     animation: none;
   }
 }
