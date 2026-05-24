@@ -225,13 +225,12 @@ def on_webview_will_set_content(web_content: WebContent, context: Optional[Any])
     if isinstance(context, DeckBrowser):
         web_content.css.append(f"{WEB}/heatmap.css")
         web_content.js.append(f"{WEB}/heatmap.js")
-        # Whole-row click → study (skips the Overview page). Loaded
-        # unconditionally on the deck browser, independent of sidebar.
-        web_content.js.append(f"{WEB}/deckrow.js")
-        # Expand/collapse chevron on parent decks. Tree is forced fully
-        # expanded server-side (see _patch_deck_tree_always_expanded);
-        # this JS folds descendants client-side, session-only.
-        web_content.js.append(f"{WEB}/decktree.js")
+        # Shared deck-list component — same code path as the congrats
+        # Keep-going list. homedeck.js hides Anki's <table> and renders
+        # the list via __adDeckList.render() from window.__baDeckTree.
+        web_content.css.append(f"{WEB}/decklist.css")
+        web_content.js.append(f"{WEB}/decklist.js")
+        web_content.js.append(f"{WEB}/homedeck.js")
         # Tag the deck browser's <center> so theme.css can scope the heavy
         # homepage layout to it alone — the Overview shares this stylesheet
         # and must keep its own simple layout (just palette + type).
@@ -275,6 +274,20 @@ def on_webview_will_set_content(web_content: WebContent, context: Optional[Any])
             )
         except Exception:
             pass
+        # Embed the full deck tree as JSON so homedeck.js can render the deck
+        # list with the EXACT same JS code path as the congrats page (via
+        # __adDeckList.render()). Both views feed identically-shaped data
+        # into one render function — no duplicated DOM building.
+        if isinstance(context, DeckBrowser):
+            try:
+                import json as _json
+                tree_payload = _full_deck_tree_payload()
+                web_content.head += (
+                    "<script>window.__baDeckTree = "
+                    + _json.dumps(tree_payload) + ";</script>"
+                )
+            except Exception:
+                pass
     # Floating Settings cog — only when the sidebar is OFF on the homepage.
     no_side = not cfg.get("sidebar_nav", True)
     if no_side and isinstance(context, (DeckBrowser, Overview)):
@@ -1376,6 +1389,60 @@ def _finished_deck_stats(did: int) -> Dict[str, Any]:
     return out
 
 
+def _full_deck_tree_payload() -> list:
+    """Flat list of EVERY deck (top + descendants), tagged with depth and
+    counts. Used to render the home-page deck list with the same JS render
+    path as the congrats "Keep going" list — both pages feed an identical
+    structure into __adDeckList.render()."""
+    out: list = []
+    try:
+        tree = mw.col.sched.deck_due_tree()
+        try:
+            current_did = int(mw.col.decks.get_current_id())
+        except Exception:
+            try:
+                current_did = int(mw.col.decks.current()["id"])
+            except Exception:
+                current_did = 0
+
+        def is_filtered(did: int) -> bool:
+            try:
+                d = mw.col.decks.get(did)
+                return bool(d and d.get("dyn"))
+            except Exception:
+                return False
+
+        def visit(node, depth):
+            did = int(getattr(node, "deck_id", 0) or 0)
+            n = int(getattr(node, "new_count", 0) or 0)
+            l = int(getattr(node, "learn_count", 0) or 0)
+            r = int(getattr(node, "review_count", 0) or 0)
+            kids = list(getattr(node, "children", []) or [])
+            kid_rows: list = []
+            for c in kids:
+                kid_rows.extend(visit(c, depth + 1))
+            if did == 0:
+                return kid_rows
+            full = str(getattr(node, "name", "") or "")
+            leaf = full.split("::")[-1]
+            row = {
+                "did": did,
+                "name": leaf,
+                "depth": depth,
+                "new": n,
+                "learn": l,
+                "review": r,
+                "current": did == current_did,
+                "filtered": is_filtered(did),
+            }
+            return [row] + kid_rows
+
+        out = visit(tree, -1)
+    except Exception:
+        pass
+    return out
+
+
 def _filtered_deck_tree(exclude_did: int) -> list:
     """Flat list of decks with any work (new/learn/review > 0), excluding the
     finished deck *and its descendants*. Preserves Anki's natural deck order
@@ -1449,6 +1516,50 @@ def _build_congrats_payload() -> Dict[str, Any]:
     except Exception:
         pass
     stats = _finished_deck_stats(did) if did else {}
+    # Dev preview: when designing the congrats page against a cached demo
+    # collection, "today" rarely has any reviews. Fall back to the most
+    # recent day with reviews on this deck so the page renders with real
+    # numbers. Only active when .devmode is present (never ships).
+    if _dev_active() and did and (stats.get("thisDeck") or 0) == 0:
+        try:
+            ids = _deck_and_descendant_ids(int(did))
+            if ids:
+                placeholders = ",".join("?" * len(ids))
+                shift = _day_shift_seconds()
+                row = mw.col.db.first(
+                    f"select cast((id/1000 + ?) / 86400 as int) as d "
+                    f"from revlog where cid in "
+                    f"(select id from cards where did in ({placeholders})) "
+                    f"order by id desc limit 1",
+                    shift, *ids,
+                )
+                if row and row[0] is not None:
+                    d = int(row[0])
+                    row2 = mw.col.db.first(
+                        f"select count(*), coalesce(sum(time),0), "
+                        f"sum(case when ease=1 then 1 else 0 end), "
+                        f"sum(case when ease=2 then 1 else 0 end), "
+                        f"sum(case when ease=3 then 1 else 0 end), "
+                        f"sum(case when ease=4 then 1 else 0 end) "
+                        f"from revlog where cid in "
+                        f"(select id from cards where did in ({placeholders})) "
+                        f"and cast((id/1000 + ?) / 86400 as int) = ?",
+                        *ids, shift, d,
+                    )
+                    if row2:
+                        cnt, ms, ag, hd, gd, ez = row2
+                        stats = {
+                            "thisDeck": int(cnt or 0),
+                            "timeSec": int(float(ms or 0) / 1000.0),
+                            "breakdown": {
+                                "again": int(ag or 0),
+                                "hard":  int(hd or 0),
+                                "good":  int(gd or 0),
+                                "easy":  int(ez or 0),
+                            },
+                        }
+        except Exception:
+            pass
     today_total = 0
     try:
         s = _standing()
@@ -1586,9 +1697,10 @@ def on_webview_did_inject_style_into_page(webview) -> None:
             f"document.head.appendChild(st);"
         )
         css_files = [
-            "tokens.css", "theme.css", "logo.css", "sidebar.css", "congrats.css",
+            "tokens.css", "theme.css", "logo.css", "sidebar.css",
+            "deckopts.css", "decklist.css", "congrats.css",
         ]
-        js_files = ["sidebar.js", "congrats.js"]
+        js_files = ["sidebar.js", "deckopts.js", "decklist.js", "congrats.js"]
         css_inject = ""
         for f in css_files:
             css_inject += (
@@ -1598,9 +1710,13 @@ def on_webview_did_inject_style_into_page(webview) -> None:
             )
         js_inject = ""
         for f in js_files:
+            # `async=false` on a dynamically-inserted script preserves the
+            # insertion order — otherwise decklist.js (which sets
+            # window.__adDeckList) may load AFTER congrats.js, and the
+            # Keep-going list silently fails to render.
             js_inject += (
                 f"(function(){{var s=document.createElement('script');"
-                f"s.src='{WEB}/{f}';s.defer=false;"
+                f"s.src='{WEB}/{f}';s.async=false;"
                 f"document.head.appendChild(s);}})();"
             )
         seed = (
@@ -2871,11 +2987,26 @@ def _dev_run_cmd(raw: str) -> None:
                     except Exception:
                         pass
                 if QTimer is not None:
-                    QTimer.singleShot(5000, _restore)
+                    QTimer.singleShot(30000, _restore)
             except Exception as e:
                 _dev_cmd_log(f"congrats patch err: {e!r}")
+            # Always bounce through deckBrowser so moveToState("overview")
+            # really re-renders (Anki short-circuits same-state transitions).
+            # Re-select the deck after the deckBrowser pass since the state
+            # change may reset col.decks.current().
             try:
-                mw.moveToState("overview")
+                mw.moveToState("deckBrowser")
+                if QTimer is not None:
+                    def _go(d=did):
+                        try:
+                            mw.col.decks.select(d)
+                        except Exception:
+                            pass
+                        mw.moveToState("overview")
+                    QTimer.singleShot(50, _go)
+                else:
+                    mw.col.decks.select(did)
+                    mw.moveToState("overview")
             except Exception:
                 pass
         elif cmd.startswith("dump_main:"):

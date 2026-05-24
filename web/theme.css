@@ -272,36 +272,53 @@ body::before {
   max-width: none !important;
   overflow: hidden;
 }
-.ba-home th.optscol { width: 36px; }
+.ba-home th.optscol { width: 32px; }
 .ba-home th.count   { width: 56px; }    /* fixed-layout column widths */
 .ba-home tr.deck td[align="end"] { width: 56px; }
-.ba-home tr.deck td.opts { width: 36px; }
+/* Opts cell shrinks to the gear's hover-target footprint and aligns the
+   gear LEFT inside it, so it sits a few pixels right of the last count
+   instead of being shoved to the far right of the table. */
+.ba-home tr.deck td.opts { width: 32px; }
 @media (max-width: 820px) {
   .ba-home th.count, .ba-home tr.deck td[align="end"] { width: 44px; }
 }
 
+/* Rows have no inter-row hairline — separation comes from the row-hover
+   wash like the congrats "Keep going" list. Same compact density too. */
 .ba-home tr.deck td {
   background: transparent !important;
   border: 0 !important;
-  border-bottom: 1px solid var(--rf-line) !important;
   border-radius: 0 !important;
-  padding: var(--rf-pad-row, 16px) 10px !important;
+  padding: 8px 10px !important;
   vertical-align: middle;
-  transition: background 120ms ease;
+  transition: background 160ms ease;
 }
 .ba-home tr.deck td.decktd { padding-left: 4px !important; }
-.ba-home tr.deck td[align="end"] { padding: var(--rf-pad-row, 16px) 6px !important; }
+.ba-home tr.deck td[align="end"] { padding: 8px 6px !important; }
+.ba-home tr.deck td.opts { padding: 6px 4px !important; }
 .ba-home tr.deck:hover:not(.top-level-drag-row) td {
   background: var(--rf-row-hover) !important;
-  border-radius: 0 !important;
+}
+.ba-home tr.deck:hover:not(.top-level-drag-row) td:first-child {
+  border-top-left-radius: 8px !important;
+  border-bottom-left-radius: 8px !important;
+}
+.ba-home tr.deck:hover:not(.top-level-drag-row) td:last-child {
+  border-top-right-radius: 8px !important;
+  border-bottom-right-radius: 8px !important;
 }
 .ba-home tr.deck.current td,
 .ba-home .current td {
   background: var(--rf-row-current) !important;
-  border-radius: 0 !important;
 }
-.ba-home tr.deck.current td.decktd {
+.ba-home tr.deck.current td:first-child {
+  border-top-left-radius: 8px !important;
+  border-bottom-left-radius: 8px !important;
   box-shadow: inset 2px 0 0 var(--rf-accent, #6c8cff);
+}
+.ba-home tr.deck.current td:last-child {
+  border-top-right-radius: 8px !important;
+  border-bottom-right-radius: 8px !important;
 }
 .ba-home tr.deck.current a.deck { color: var(--rf-ink-strong) !important; }
 .ba-home tr.top-level-drag-row td {
@@ -327,67 +344,33 @@ body::before {
   color: var(--rf-accent, #6c8cff) !important;
   font-style: italic;
 }
-/* Parent-deck chevron — decktree.js replaces Anki's `+/-` text toggle
-   with .ad-chev on parent rows and .ad-spacer on leaf rows so deck
-   names align across siblings. Anything still carrying just `.collapse`
-   (a transient pre-wire state, or a future Anki rendering) is hidden
-   so nothing leaks through. */
-.ba-home a.collapse:not(.ad-chev),
-.ba-home span.collapse:not(.ad-spacer) { display: none !important; }
 
-.ba-home a.collapse.ad-chev {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  margin: 0 6px 0 -2px;
+/* Sub-deck rows — dimmer, slightly smaller serif. Indent is carried by
+   Anki's existing `&nbsp;` whitespace in the leading text node, so the
+   visual hierarchy is "smaller / dimmer / pushed right" without a glyph. */
+.ba-home tr.deck[data-level="1"] a.deck,
+.ba-home tr.deck[data-level="2"] a.deck,
+.ba-home tr.deck[data-level="3"] a.deck {
+  font-weight: 400 !important;
+  color: var(--rf-ink-dim) !important;
+  font-size: 15px !important;
+}
+/* Hide Anki's untouched `<a class="collapse">-` toggles before decktree.js
+   replaces them with our shared chevron/spacer. Once swapped in, they live
+   under `.ad-list-chev` and inherit visuals from decklist.css. */
+.ba-home a.collapse:not(.ad-list-chev),
+.ba-home span.collapse:not(.ad-list-chev) { display: none !important; }
+
+/* Chevron sits in a table cell next to the deck-name anchor. The text
+   sits on its baseline; the chevron uses `vertical-align: middle` (the
+   parent line's x-height middle) and a small upward tweak so its optical
+   centre lands on the serif font's visual centre, not on the baseline. */
+.ba-home td.decktd > .ad-list-chev {
+  margin: 0 4px 0 -4px;
   vertical-align: middle;
-  border-radius: 6px;
-  color: var(--rf-ink-faint);
-  background: transparent;
-  text-decoration: none !important;
-  -webkit-user-select: none;
-  user-select: none;
-  transition:
-    color 160ms ease,
-    background 160ms ease,
-    transform 240ms cubic-bezier(.2, .8, .2, 1);
+  position: relative;
+  top: -1px;
 }
-.ba-home a.collapse.ad-chev svg {
-  width: 12px;
-  height: 12px;
-  transform: rotate(0deg);
-  transform-origin: 50% 50%;
-  transition: transform 240ms cubic-bezier(.2, .8, .2, 1);
-}
-/* Default state (expanded) → chevron points down (matches chevron-down.svg).
-   Collapsed → rotate -90° so it points right (closed disclosure). */
-.ba-home a.collapse.ad-chev.ad-collapsed svg { transform: rotate(-90deg); }
-/* The row itself also gets a (very faint) hover background; the chevron
-   needs to read above that, so we use --rf-line for a noticeable lift. */
-.ba-home a.collapse.ad-chev:hover {
-  color: var(--rf-ink-strong);
-  background: var(--rf-line);
-}
-.ba-home a.collapse.ad-chev:active svg { transform: scale(.88); }
-.ba-home a.collapse.ad-chev.ad-collapsed:active svg {
-  transform: rotate(-90deg) scale(.88);
-}
-
-/* Leaf rows get a transparent placeholder sized to the chevron so deck
-   names at the same level line up whether or not the sibling is a parent. */
-.ba-home span.collapse.ad-spacer {
-  display: inline-block;
-  width: 22px;
-  margin: 0 6px 0 -2px;
-  vertical-align: middle;
-}
-
-/* Hidden descendant rows — collapsed instantly (table-row height
-   transitions are not reliable in tables). The chevron rotation carries
-   the visual feedback. */
-.ba-home tr.deck.ad-hidden { display: none; }
 
 /* Whole row is a study target — make that intent visible on hover. */
 .ba-home tr.deck { cursor: pointer; }
@@ -415,19 +398,27 @@ body::before {
 .ba-home .review-count { color: var(--rf-due)   !important; }
 .ba-home .zero-count   { color: var(--rf-ink-faint) !important; font-weight: 400; }
 
-.ba-home img.gears {
-  width: 14px; height: 14px;
-  opacity: 0;
-  filter: invert(86%);
-  transition: opacity 120ms ease;
-  vertical-align: middle;
+/* Gear cell — decktree.js wraps the per-row gear in `.ad-list-gear`, so
+   the visuals come from decklist.css. The cell hugs the counts (no extra
+   right padding) and aligns the gear LEFT so it reads as adjacent to the
+   count cluster, not as a separate column at the end of the table. */
+.ba-home td.opts {
+  text-align: left !important;
+  padding: 6px 0 6px 4px !important;
 }
-@media (prefers-color-scheme: light) {
-  :root:not([data-rf-theme="dark"]) .ba-home img.gears { filter: invert(20%); }
+.ba-home tr.deck:hover td.opts .ad-list-gear { opacity: 0.85; }
+
+/* Anki's <table>-based deck tree is replaced wholesale by the shared
+   __adDeckList.render() output (homedeck.js). The styles above are kept
+   as a safety net for the brief moment between page paint and the JS
+   running; the rules below hide the table once the component takes over. */
+.ba-home > table { display: none !important; }
+.ba-home > .ad-list--home {
+  width: 100%;
+  max-width: var(--rf-measure);
+  margin: 0 auto;
 }
-:root[data-rf-theme="light"] .ba-home img.gears { filter: invert(20%); }
-.ba-home tr.deck:hover img.gears { opacity: 0.45; }
-.ba-home td.opts a:hover img.gears { opacity: 0.95; }
+.ba-home #studiedToday { display: none !important; }
 
 /* ---------------- PRACTICE — heatmap-only section below the decks --------- */
 .ba-practice {
