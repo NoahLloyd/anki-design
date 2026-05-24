@@ -7,25 +7,37 @@
   position: fixed;
   inset: 0;
   z-index: 9000;
-  background: rgba(8, 8, 12, 0.42);
-  backdrop-filter: blur(6px) saturate(1.05);
-  -webkit-backdrop-filter: blur(6px) saturate(1.05);
+  /* Backdrop animates from clear → dim with the blur intensifying in lock
+     step, so the page "settles" behind the palette rather than snapping
+     into a dim. Both states have their colour declared so the transition
+     interpolates cleanly between them in either light or dark mode. */
+  background: rgba(8, 8, 12, 0);
+  backdrop-filter: blur(0) saturate(1);
+  -webkit-backdrop-filter: blur(0) saturate(1);
   display: flex;
   align-items: flex-start;
   justify-content: center;
   padding-top: 14vh;
   font-family: var(--rf-sans, ui-sans-serif, -apple-system, system-ui, sans-serif);
-  opacity: 0;
   pointer-events: none;
-  transition: opacity 120ms ease;
+  transition:
+    background 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    backdrop-filter 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    -webkit-backdrop-filter 240ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 :root[data-rf-theme="light"] .ba-cmdk-back,
 :root:not([data-rf-theme="dark"]) .ba-cmdk-back {
-  background: rgba(36, 32, 22, 0.22);
+  background: rgba(36, 32, 22, 0);
 }
 .ba-cmdk-back[data-open="true"] {
-  opacity: 1;
   pointer-events: auto;
+  background: rgba(8, 8, 12, 0.42);
+  backdrop-filter: blur(8px) saturate(1.05);
+  -webkit-backdrop-filter: blur(8px) saturate(1.05);
+}
+:root[data-rf-theme="light"] .ba-cmdk-back[data-open="true"],
+:root:not([data-rf-theme="dark"]) .ba-cmdk-back[data-open="true"] {
+  background: rgba(36, 32, 22, 0.22);
 }
 
 .ba-cmdk {
@@ -45,11 +57,34 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  transform: translateY(-6px) scale(0.985);
-  transition: transform 140ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  /* Spring-like entrance: rises from below with a slight overshoot, fades
+     in concurrently. The cubic-bezier(0.34, 1.56, 0.64, 1) is a backOut
+     curve — it overshoots ~12% then settles, giving the modal a small
+     bounce that reads as "delightful but not bouncy." Opacity uses a
+     shorter, plainer ease so the modal becomes solid before the spring
+     finishes settling. */
+  transform: translateY(18px) scale(0.94);
+  opacity: 0;
+  transition:
+    transform 340ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    opacity 200ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 .ba-cmdk-back[data-open="true"] .ba-cmdk {
   transform: translateY(0) scale(1);
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ba-cmdk-back,
+  .ba-cmdk {
+    transition-duration: 80ms;
+  }
+  .ba-cmdk {
+    transform: none;
+  }
+  .ba-cmdk-back[data-open="true"] .ba-cmdk {
+    transform: none;
+  }
 }
 
 /* ---------------------------- INPUT ROW ---------------------------- */

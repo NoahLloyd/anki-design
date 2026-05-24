@@ -347,6 +347,10 @@
     isOpen = false;
     root.setAttribute("data-open", "false");
     try { input.blur(); } catch (e) {}
+    // Notify Python so the cmdk overlay (a Qt frame holding a dedicated
+    // webview for use over embeds) can hide itself. No-op when the palette
+    // is hosted in mw.web / reviewer.web.
+    pycmdSend("cmdk-closed");
   }
   function toggle(initialQuery) {
     if (isOpen) close();
