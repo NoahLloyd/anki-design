@@ -1353,6 +1353,155 @@ def _refresh_sync_status() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Sync — silent, sidebar-driven UX.
+#
+# Anki's default flow opens a modal QProgressDialog (titled "Checking…" then
+# "Uploading…" etc.) while sync runs, and pops a `tooltip("Sync complete")`
+# after it closes. Both yank focus and break the page's visual flow. We
+# replace `mw._sync_collection_and_media` with a version that runs the same
+# sync via `taskman.run_in_background` (no modal, no tooltip) and feeds the
+# lifecycle to the sidebar instead — the existing "active" pulse on the
+# Sync row carries the load while a 150 ms timer mirrors normal_sync stage
+# strings to JS, and a final result push triggers the "Synced" reveal.
+#
+# Confirmation paths that legitimately need a dialog (login when no auth,
+# full-upload/full-download choice) still surface via Anki's own UI — we
+# only suppress the *progress* dialog and the *post-sync* tooltip.
+# --------------------------------------------------------------------------- #
+def _push_sidebar_sync_progress(stage: str, added: str, removed: str) -> None:
+    """Mirror normal_sync progress strings to the sidebar's Sync row."""
+    import json as _json
+    payload = _json.dumps({"stage": stage or "", "added": added or "",
+                           "removed": removed or ""})
+    js = "window.__baSetSyncProgress && window.__baSetSyncProgress(%s);" % payload
+    w = getattr(mw, "web", None)
+    if w is not None:
+        try:
+            w.eval(js)
+        except Exception:
+            pass
+
+
+def _push_sidebar_sync_result(kind: str) -> None:
+    """Trigger the sidebar's end-of-sync reveal. kind ∈ {"ok","noop","error"}."""
+    safe = "".join(ch for ch in kind if ch.isalnum())
+    js = "window.__baSetSyncResult && window.__baSetSyncResult('%s');" % safe
+    w = getattr(mw, "web", None)
+    if w is not None:
+        try:
+            w.eval(js)
+        except Exception:
+            pass
+
+
+def _ad_sync_collection_silent(mw_arg: Any, on_done) -> None:
+    """Drop-in for `aqt.sync.sync_collection` — no modal, no tooltip.
+
+    Calls `mw.col.sync_collection(auth, media_enabled)` directly through
+    `taskman.run_in_background`, polls `latest_progress().normal_sync`
+    every 150 ms, and routes the result to the sidebar. Full-sync paths
+    still delegate to `aqt.sync.full_sync` (which owns its own dialog)."""
+    from aqt.sync import full_sync as _full_sync, handle_sync_error
+    from aqt.qt import QTimer, qconnect
+    from aqt.utils import showText
+
+    auth = mw_arg.pm.sync_auth()
+    if not auth:
+        # Should never happen: callers gate on auth. Defensive no-op.
+        return on_done()
+
+    seen = {"added": "", "removed": "", "stage": ""}
+    timer = QTimer(mw_arg)
+
+    def on_timer() -> None:
+        try:
+            progress = mw_arg.col.latest_progress()
+            if progress.HasField("normal_sync"):
+                p = progress.normal_sync
+                if p.added:   seen["added"]   = p.added
+                if p.removed: seen["removed"] = p.removed
+                if p.stage:   seen["stage"]   = p.stage
+                _push_sidebar_sync_progress(p.stage, p.added, p.removed)
+        except Exception:
+            pass
+    qconnect(timer.timeout, on_timer)
+    timer.start(150)
+
+    def on_future_done(fut) -> None:
+        try:
+            mw_arg.col._load_scheduler()
+        except Exception:
+            pass
+        timer.stop()
+        try:
+            out = fut.result()
+        except Exception as err:
+            _push_sidebar_sync_result("error")
+            handle_sync_error(mw_arg, err)
+            return on_done()
+
+        try:
+            mw_arg.pm.set_host_number(out.host_number)
+            if out.new_endpoint:
+                mw_arg.pm.set_current_sync_url(out.new_endpoint)
+            if out.server_message:
+                showText(out.server_message, parent=mw_arg)
+        except Exception:
+            pass
+
+        if out.required == out.NO_CHANGES:
+            # Distinguish "real changes were synced" vs "heartbeat, nothing
+            # happened" so the reveal can be louder vs quieter accordingly.
+            had_changes = bool(seen["added"] or seen["removed"])
+            _push_sidebar_sync_result("ok" if had_changes else "noop")
+            try:
+                mw_arg.media_syncer.start_monitoring()
+            except Exception:
+                pass
+            return on_done()
+        else:
+            # Full upload/download paths legitimately need a confirmation
+            # dialog — fall back to Anki's native flow. The sidebar's
+            # "active" pulse is cleared by on_done()'s gui_hooks.sync_did_finish.
+            _push_sidebar_sync_result("ok")
+            _full_sync(mw_arg, out, on_done)
+
+    mw_arg.taskman.run_in_background(
+        lambda: mw_arg.col.sync_collection(auth, mw_arg.pm.media_syncing_enabled()),
+        on_future_done,
+    )
+
+
+def _install_silent_sync() -> None:
+    """Patch mw._sync_collection_and_media to use our silent flow.
+
+    Both manual sync (Sync button / Y) and automatic sync on profile
+    open/close route through this method, so a single patch covers all
+    entry points."""
+    import types
+
+    def _silent(self, after_sync) -> None:
+        def on_collection_sync_finished() -> None:
+            try:
+                self.col.models._clear_cache()
+            except Exception:
+                pass
+            gui_hooks.sync_did_finish()
+            try:
+                self.reset()
+            except Exception:
+                pass
+            after_sync()
+        gui_hooks.sync_will_start()
+        _ad_sync_collection_silent(self, on_done=on_collection_sync_finished)
+
+    try:
+        mw._sync_collection_and_media = types.MethodType(_silent, mw)
+    except Exception:
+        pass
+
+
+# --------------------------------------------------------------------------- #
 # Congrats page (Overview's empty state) — redesigned.
 # Anki's "Congratulations! You have finished this deck for now." is a Svelte
 # page loaded via `web.load_sveltekit_page("congrats")`. That bypasses the
@@ -2273,6 +2422,14 @@ gui_hooks.main_window_did_init.append(_setup_sidebar_shortcuts)
 try:
     gui_hooks.sync_will_start.append(lambda *a: _push_sidebar_sync("active"))
     gui_hooks.sync_did_finish.append(lambda *a: _refresh_sync_status())
+except Exception:
+    pass
+
+# Silent sync (no modal progress dialog, no post-sync tooltip). Patches
+# mw._sync_collection_and_media, so it needs mw to exist — install on
+# main_window_did_init.
+try:
+    gui_hooks.main_window_did_init.append(lambda *a: _install_silent_sync())
 except Exception:
     pass
 
