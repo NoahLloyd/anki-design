@@ -51,6 +51,10 @@
   }
 
   function init() {
+    // Single-deck mode owns the page (the Python-rendered hero replaces
+    // Anki's table; CSS hides the table). Rendering the shared deck-list
+    // on top of that duplicates the deck.
+    if (document.querySelector('.ba-home.ba-single')) return;
     // Anki re-renders the deck browser by calling `mw.deckBrowser.refresh()`,
     // which causes webview_will_set_content to fire and the whole page (this
     // script included) to reload. So we only need to render once at startup.
