@@ -3804,7 +3804,7 @@ def _dev_run_cmd(raw: str) -> None:
                         _dev_cmd_log("browse_dims: no splitter")
                     else:
                         _dev_cmd_log(
-                            f"splitter: sizes={sp.sizes()} "
+                            f"outer splitter: sizes={sp.sizes()} "
                             f"count={sp.count()} handle_w={sp.handleWidth()} "
                             f"orient={sp.orientation()}"
                         )
@@ -3816,6 +3816,45 @@ def _dev_run_cmd(raw: str) -> None:
                                 f"size={w.width()}x{w.height()} "
                                 f"min={w.minimumWidth()} max={w.maximumWidth()}"
                             )
+                    # Inner Browser splitter (search/table | editor) lives
+                    # inside centralwidget. It's the one the user drags to
+                    # resize the editor pane.
+                    try:
+                        from . import browse_embed
+                        br = browse_embed._state.get("browser")
+                        if br is not None:
+                            inner = br.form.splitter
+                            _dev_cmd_log(
+                                f"inner splitter: sizes={inner.sizes()} "
+                                f"count={inner.count()} "
+                                f"collapsible={inner.childrenCollapsible()} "
+                                f"orient={inner.orientation()}"
+                            )
+                            for i in range(inner.count()):
+                                w = inner.widget(i)
+                                _dev_cmd_log(
+                                    f"  inner[{i}]: {type(w).__name__} "
+                                    f"obj={w.objectName()!r} "
+                                    f"size={w.width()}x{w.height()} "
+                                    f"visible={w.isVisible()} "
+                                    f"min={w.minimumWidth()} max={w.maximumWidth()}"
+                                )
+                            fa = getattr(br.form, "fieldsArea", None)
+                            if fa is not None:
+                                _dev_cmd_log(
+                                    f"fieldsArea: size={fa.width()}x{fa.height()} "
+                                    f"visible={fa.isVisible()} "
+                                    f"min={fa.minimumWidth()}x{fa.minimumHeight()}"
+                                )
+                            ed = getattr(br, "editor", None)
+                            ew = getattr(ed, "web", None) if ed else None
+                            if ew is not None:
+                                _dev_cmd_log(
+                                    f"editor.web: size={ew.width()}x{ew.height()} "
+                                    f"visible={ew.isVisible()}"
+                                )
+                    except Exception as e:
+                        _dev_cmd_log(f"inner dump err: {e!r}")
             except Exception as e:
                 _dev_cmd_log(f"browse_dims err: {e!r}")
         elif cmd.startswith("browse_search:"):
@@ -3840,6 +3879,24 @@ def _dev_run_cmd(raw: str) -> None:
                     _dev_cmd_log(f"browse_search: {q!r}")
             except Exception as e:
                 _dev_cmd_log(f"browse_search err: {e!r}")
+        elif cmd.startswith("browse_inner_resize:"):
+            try:
+                from . import browse_embed
+                br = browse_embed._state.get("browser")
+                parts = cmd.split(":", 1)[1].split(",")
+                want = [int(p.strip()) for p in parts]
+                if br is not None:
+                    sp = br.form.splitter
+                    sp.setSizes(want)
+                    try:
+                        sp.splitterMoved.emit(sp.sizes()[0], 1)
+                    except Exception:
+                        pass
+                    _dev_cmd_log(
+                        f"browse_inner_resize: set {want} -> got {sp.sizes()}"
+                    )
+            except Exception as e:
+                _dev_cmd_log(f"browse_inner_resize err: {e!r}")
         elif cmd.startswith("browse_resize:"):
             try:
                 from aqt.qt import QFrame, QSplitter
