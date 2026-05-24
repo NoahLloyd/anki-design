@@ -25,6 +25,8 @@ EXCLUDE_FILES = {
     ".devmode",
     "build.py",
     "Makefile",
+    "CLAUDE.md",
+    "SUBMISSION.md",
 }
 EXCLUDE_GLOBS = ["*.pyc"]
 
