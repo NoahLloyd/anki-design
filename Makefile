@@ -18,10 +18,12 @@ LINK := $(BASE)/addons21/$(NAME)
 ANKI    ?= $(HOME)/Library/Application Support/AnkiProgramFiles/.venv/bin/anki
 ANKI_PY ?= $(HOME)/Library/Application Support/AnkiProgramFiles/.venv/bin/python
 
-# Real base, used only by `make seed` as a read source.
-REAL_BASE := $(HOME)/Library/Application Support/Anki2
+# Real base, used by `make seed` as a read source and `make install` as the
+# install target (your actual Anki, NOT the dev/demo bases).
+REAL_BASE    := $(HOME)/Library/Application Support/Anki2
+REAL_INSTALL := $(REAL_BASE)/addons21/anki-design
 
-.PHONY: dev undev run run-fg logs seed demo-seed demo-run demo demo-rebuild demo-stop demo-clean demo-clean-cache demo-clean-all demo-cache-write demo-cache-restore demo-link deisolate clean-base build clean
+.PHONY: dev undev run run-fg logs seed demo-seed demo-run demo demo-rebuild demo-stop demo-clean demo-clean-cache demo-clean-all demo-cache-write demo-cache-restore demo-link deisolate clean-base build install clean
 
 # Demo bases — each variant gets its own Anki base + its own golden cache.
 # The cache lives under ~/Library/Caches so it's shared across all worktrees:
@@ -211,6 +213,28 @@ clean-base:
 # Produce dist/anki-design.ankiaddon for AnkiWeb upload.
 build:
 	@python3 build.py
+
+# Build + drop the addon into your REAL Anki (not the dev/demo bases).
+# Removes ANY other folder under addons21/ whose manifest declares package
+# "anki-design" first — otherwise an AnkiWeb-numeric-ID copy (e.g. 1809063985)
+# and our install both register hooks, and the deck browser renders the hero
+# + heatmap twice. If real Anki is open, quit and reopen it afterwards so the
+# addon reloads.
+install: build
+	@test -f dist/anki-design.ankiaddon || { echo "build missing at dist/anki-design.ankiaddon"; exit 1; }
+	@for d in "$(REAL_BASE)/addons21"/*/; do \
+	  [ -d "$$d" ] || continue; \
+	  [ -f "$$d/manifest.json" ] || continue; \
+	  grep -q '"package":[[:space:]]*"anki-design"' "$$d/manifest.json" || continue; \
+	  [ "$$d" = "$(REAL_INSTALL)/" ] && continue; \
+	  echo "removing duplicate anki-design install: $$d"; \
+	  rm -rf "$$d"; \
+	done
+	@rm -rf "$(REAL_INSTALL)"
+	@mkdir -p "$(REAL_INSTALL)"
+	@unzip -q dist/anki-design.ankiaddon -d "$(REAL_INSTALL)"
+	@echo "installed: $(REAL_INSTALL)"
+	@echo "next     : (re)start Anki to load this build"
 
 clean:
 	@rm -rf dist __pycache__
