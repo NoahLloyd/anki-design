@@ -1,8 +1,8 @@
 // Anki Design — redesigned congrats page.
-// Replaces Anki's stock Svelte panel with a session debrief: big-number stats
-// for the deck just finished, and a clickable tree of other decks with work.
-// Data is bootstrapped from window.__baCongratsData (set by Python before this
-// script runs).
+// A session debrief: a brief confetti burst, the deck name, one-line
+// session result, proportional accuracy bar, and a list of other decks
+// with work. Data is bootstrapped from window.__baCongratsData (set by
+// Python before this script runs).
 (function () {
   "use strict";
   if (window.__ankiDesignCongrats) return;
@@ -11,39 +11,40 @@
   function send(cmd) {
     try { if (typeof pycmd === "function") pycmd("ba:" + cmd); } catch (_) {}
   }
-  function bridge(cmd) {
-    // Anki's congrats page uses bridgeCommand for the customStudy link; keep
-    // compatibility by routing through the same channel.
-    try {
-      if (typeof bridgeCommand === "function") bridgeCommand(cmd);
-      else if (typeof pycmd === "function") pycmd(cmd);
-    } catch (_) {}
-  }
 
   function fmtN(n) {
     if (n == null) return "0";
     return Number(n).toLocaleString();
   }
-  // "3:42" for minutes:seconds, or "12s" for sub-minute. Total time on this
-  // deck today — meant to feel like a workout summary, not a stopwatch.
-  function fmtTime(totalSec) {
+  // Time as a sequence of [digit, unit] pairs so each unit can be a
+  // separate flex item aligned with the other labels on a single y-line.
+  // Returns the result-row HTML for the time half (the digits + units).
+  function fmtTimeHTML(totalSec) {
     var s = Math.max(0, Math.round(totalSec || 0));
-    if (s < 60) return s + "<span class=\"sub\">s</span>";
-    var m = Math.floor(s / 60);
-    var rs = s % 60;
-    if (m < 60) {
-      return m + "<span class=\"sub\">m</span>" + (rs ? " " + rs + "<span class=\"sub\">s</span>" : "");
+    var parts = [];
+    if (s >= 3600) {
+      var h = Math.floor(s / 3600);
+      parts.push([h, 'h']);
+      var rm = Math.floor((s % 3600) / 60);
+      if (rm) parts.push([rm, 'm']);
+    } else if (s >= 60) {
+      var m = Math.floor(s / 60);
+      parts.push([m, 'm']);
+      var rs = s % 60;
+      if (rs) parts.push([rs, 's']);
+    } else {
+      parts.push([s, 's']);
     }
-    var h = Math.floor(m / 60);
-    var rm = m % 60;
-    return h + "<span class=\"sub\">h</span>" + (rm ? " " + rm + "<span class=\"sub\">m</span>" : "");
+    return parts.map(function (p) {
+      return '<span class="ba-cg-result-n">' + p[0] + '</span>'
+           + '<span class="ba-cg-result-u">' + p[1] + '</span>';
+    }).join('');
   }
-  // Per-card avg in seconds, rounded to one decimal if under 10s.
-  function fmtPerCard(sec) {
-    if (!sec) return "—";
+  function fmtPace(sec) {
+    if (!sec) return "";
     var x = sec;
-    if (x < 10) return (Math.round(x * 10) / 10) + "<span class=\"sub\">s</span>";
-    return Math.round(x) + "<span class=\"sub\">s</span>";
+    if (x < 10) return (Math.round(x * 10) / 10) + "s";
+    return Math.round(x) + "s";
   }
   function pct(n, total) {
     if (!total) return 0;
@@ -52,81 +53,103 @@
 
   // ---- DOM builders ---- //
 
-  function statHTML(n, label, sub) {
-    var labelHTML = label + (sub ? '<b>' + sub + '</b>' : '');
+  function headHTML(deckName, did) {
+    var didAttr = did ? ' data-did="' + did + '"' : '';
+    // The deck title doubles as a deck-options trigger — same affordance
+    // as the gear elsewhere in the addon.
     return ''
-      + '<div class="ba-cg-stat">'
-      +   '<div class="ba-cg-stat-n">' + n + '</div>'
-      +   '<div class="ba-cg-stat-l">' + labelHTML + '</div>'
-      + '</div>';
+      + '<header class="ba-cg-head">'
+      +   '<h1 class="ba-cg-title"' + didAttr + ' tabindex="0"'
+      +     ' title="Deck options"'
+      +     ' onclick="if(window.__adDeckOpts) window.__adDeckOpts(' + (did || 0) + ', event)">'
+      +     escapeHTML(deckName)
+      +   '</h1>'
+      + '</header>';
   }
 
-  function statsBlockHTML(d) {
-    var thisN = d.thisDeck || 0;
-    var todayN = d.todayTotal || 0;
-    var timeSec = d.timeSec || 0;
-    var perCard = thisN > 0 ? (timeSec / thisN) : 0;
-    if (thisN === 0) {
-      return '<div class="ba-cg-empty">'
-        + 'No reviews on this deck today. '
-        + (todayN > 0 ? ('You did <b style="color:var(--rf-ink)">' + fmtN(todayN) + '</b> on other decks.')
-                      : 'Pick something below to start.')
+  // Hero result — single editorial line: "58 CARDS · 10M 13S".
+  function resultHTML(d) {
+    var n = d.thisDeck || 0;
+    var t = d.timeSec || 0;
+    if (n === 0) {
+      var other = d.todayTotal || 0;
+      return ''
+        + '<div class="ba-cg-empty">'
+        +   '<span class="ba-cg-empty-h">No reviews on this deck today.</span>'
+        +   (other > 0
+              ? ' You did <b>' + fmtN(other) + '</b> on other decks.'
+              : ' Pick something below to start.')
         + '</div>';
     }
     return ''
-      + '<div class="ba-cg-stats">'
-      +   statHTML(fmtN(thisN),   'cards',    'this deck')
-      +   statHTML(fmtN(todayN),  'today',    'all decks')
-      +   statHTML(fmtTime(timeSec), 'time',  'this deck')
-      +   statHTML(fmtPerCard(perCard), 'per card', '')
+      + '<div class="ba-cg-result">'
+      +   '<span class="ba-cg-result-n">' + fmtN(n) + '</span>'
+      +   '<span class="ba-cg-result-u">cards</span>'
+      +   '<span class="ba-cg-result-sep" aria-hidden="true">·</span>'
+      +   fmtTimeHTML(t)
       + '</div>';
   }
 
+  // Proportional bar + 4-cell legend (label + count, no separate %).
   function accuracyHTML(d) {
     var b = d.breakdown || {};
     var again = b.again || 0, hard = b.hard || 0, good = b.good || 0, easy = b.easy || 0;
     var total = again + hard + good + easy;
     if (total === 0) return '';
+    function seg(cls, n) {
+      var p = (n / total) * 100;
+      if (p <= 0) return '';
+      // Even a 1% segment still gets a visible hair of width.
+      var w = p < 0.6 ? 0.6 : p;
+      return '<span class="ba-cg-seg ' + cls + '" style="width:' + w + '%"></span>';
+    }
     function cell(cls, label, n) {
+      var z = n === 0 ? ' is-zero' : '';
       return ''
-        + '<div class="ba-cg-acc-cell ' + cls + '">'
-        +   '<div class="ba-cg-acc-row">'
-        +     '<span class="ba-cg-acc-label">' + label + '</span>'
-        +     '<span class="ba-cg-acc-pct">' + pct(n, total) + '%</span>'
-        +   '</div>'
-        +   '<div class="ba-cg-acc-n">' + fmtN(n) + '</div>'
+        + '<div class="ba-cg-key ' + cls + z + '">'
+        +   '<span class="ba-cg-key-n">' + fmtN(n) + '</span>'
+        +   '<span class="ba-cg-key-l">' + label + '</span>'
         + '</div>';
     }
     return ''
       + '<div class="ba-cg-acc">'
-      +   cell('again', 'Again', again)
-      +   cell('hard',  'Hard',  hard)
-      +   cell('good',  'Good',  good)
-      +   cell('easy',  'Easy',  easy)
+      +   '<div class="ba-cg-bar" role="img" aria-label="Session accuracy">'
+      +     seg('again', again)
+      +     seg('hard',  hard)
+      +     seg('good',  good)
+      +     seg('easy',  easy)
+      +   '</div>'
+      +   '<div class="ba-cg-keys">'
+      +     cell('again', 'Again', again)
+      +     cell('hard',  'Hard',  hard)
+      +     cell('good',  'Good',  good)
+      +     cell('easy',  'Easy',  easy)
+      +   '</div>'
       + '</div>';
   }
 
-  function countCell(n, cls) {
-    var z = !n ? ' zero' : '';
-    return '<span class="' + cls + z + '">' + (n || 0) + '</span>';
+  // Quiet supporting strip — pace + today-total.
+  function asideHTML(d) {
+    var n = d.thisDeck || 0;
+    var t = d.timeSec || 0;
+    var today = d.todayTotal || 0;
+    if (n === 0) return '';
+    var parts = [];
+    if (n > 0 && t > 0) {
+      parts.push(fmtPace(t / n) + ' per card');
+    }
+    if (today > n) {
+      parts.push(fmtN(today) + ' across all decks today');
+    }
+    if (!parts.length) return '';
+    return '<div class="ba-cg-aside">' + parts.join(' · ') + '</div>';
   }
 
-  function deckRowHTML(node) {
-    var name = node.name == null ? '' : String(node.name);
-    var depth = node.depth || 0;
-    var n = node.new || 0, l = node.learn || 0, r = node.review || 0;
-    return ''
-      + '<button class="ba-cg-deck" data-depth="' + depth + '" '
-      +         'data-did="' + node.did + '" type="button">'
-      +   '<span class="ba-cg-deck-name">' + escapeHTML(name) + '</span>'
-      +   '<span class="ba-cg-deck-counts">'
-      +     countCell(n, 'new')
-      +     countCell(l, 'learn')
-      +     countCell(r, 'review')
-      +   '</span>'
-      + '</button>';
-  }
+  function dl() { return window.__adDeckList; }
 
+  // The list itself is rendered by __adDeckList.render() — same code path
+  // as the home page. We only emit the section header + an empty container
+  // here; the render call after mount() fills it in.
   function decksBlockHTML(decks) {
     if (!decks || !decks.length) {
       return ''
@@ -136,13 +159,8 @@
         +   '<a href="javascript:void(0)" onclick="bridgeCommand(\'customStudy\')">try custom study</a>.'
         + '</div>';
     }
-    var head = ''
-      + '<div class="ba-cg-decks-h">'
-      +   '<span class="ba-cg-decks-h-title">Keep going</span>'
-      +   '<span class="ba-cg-decks-h-sub">Other decks with work</span>'
-      + '</div>';
-    var rows = decks.map(deckRowHTML).join('');
-    return head + '<div class="ba-cg-decks">' + rows + '</div>';
+    return '<div class="ba-cg-decks-h">Keep going</div>'
+      +    '<div class="ad-list ad-list--congrats"></div>';
   }
 
   function footHTML() {
@@ -165,41 +183,48 @@
     var wrap = document.createElement('div');
     wrap.className = 'ba-cg';
     wrap.innerHTML = ''
-      + '<header class="ba-cg-head">'
-      +   '<span class="ba-cg-eyebrow">Done for now</span>'
-      +   '<h1 class="ba-cg-deck">' + escapeHTML(deckName) + '</h1>'
-      + '</header>'
-      + statsBlockHTML(d)
+      + headHTML(deckName, d.deckId || 0)
+      + resultHTML(d)
       + accuracyHTML(d)
+      + asideHTML(d)
       + decksBlockHTML(d.otherDecks)
       + footHTML();
 
-    // Wire deck-row clicks → jump straight into that deck's reviewer.
-    wrap.addEventListener('click', function (e) {
-      var btn = e.target.closest && e.target.closest('.ba-cg-deck');
-      if (!btn) return;
-      var did = btn.getAttribute('data-did');
-      if (did) send('study:' + did);
-    });
+    // Render the deck list via the shared component so this view uses the
+    // EXACT same code path as the home page. Click handlers (chevron, gear,
+    // name) are wired by __adDeckList.render(); we just pass the callbacks.
+    var listEl = wrap.querySelector('.ad-list--congrats');
+    var decks = (window.__baCongratsData || {}).otherDecks || [];
+    if (listEl && dl() && decks.length) {
+      dl().render(listEl, decks, {
+        onStudy: function (did) { send('study:' + did); },
+      });
+    }
+
+    // Enter on the deck title opens deck options too.
+    var title = wrap.querySelector('.ba-cg-title');
+    if (title) {
+      title.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          var did = parseInt(title.getAttribute('data-did') || '0', 10);
+          if (did && window.__adDeckOpts) window.__adDeckOpts(did, e);
+        }
+      });
+    }
 
     return wrap;
   }
 
   function mount() {
     if (document.querySelector('.ba-cg')) return;
-    // Anki's Svelte page is async; wait for the body to exist.
     if (!document.body) {
       document.addEventListener('DOMContentLoaded', mount);
       return;
     }
-    // Find Anki's congrats container and hide it (CSS does this too, but we
-    // also remove children to stop screen readers from announcing both).
     var stock = document.querySelector('.congrats');
     if (stock) stock.setAttribute('aria-hidden', 'true');
     document.body.appendChild(build());
-    // Force scroll to top — the Svelte announcer (an absolutely-positioned
-    // element at the bottom of the doc) can leave the viewport mid-page on
-    // some renders. We want the headline visible.
     try {
       window.scrollTo(0, 0);
       document.documentElement.scrollTop = 0;
@@ -207,15 +232,9 @@
     } catch (_) {}
   }
 
-  // The Svelte mount can win our race; observe for late insertion and rebuild
-  // if the page swaps state on us.
   function watch() {
     if (!window.MutationObserver) return;
-    var mo = new MutationObserver(function () {
-      // Just guarantee our overlay exists; if Anki re-renders we don't
-      // duplicate (build() is idempotent via the .ba-cg presence check).
-      mount();
-    });
+    var mo = new MutationObserver(function () { mount(); });
     try { mo.observe(document.documentElement, { childList: true, subtree: true }); }
     catch (_) {}
   }
