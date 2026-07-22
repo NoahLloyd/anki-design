@@ -732,7 +732,9 @@ body::before {
   /* Pivot near the base so the flicker reads as the tip dancing,
      not the whole glyph drifting. */
   transform-origin: 50% 82%;
-  animation: ba-streak-flicker 4.4s ease-in-out infinite;
+  /* Play once: an infinite transform/opacity animation keeps QtWebEngine's
+     compositor active even while Anki is in the background. */
+  animation: ba-streak-flicker 4.4s ease-in-out 1;
 }
 .ba-streak-n {
   font: 700 36px/1 var(--rf-sans);
