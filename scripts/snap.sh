@@ -3,6 +3,10 @@
 #
 # Usage:
 #   scripts/snap.sh <out.png> <title-substring|"main"> [--open-addcards] [--fill-sample]
+#   scripts/snap.sh <out.png> main --width=1280 --height=860 --js-file=path/to.js
+#
+# --width/--height resize the main window before grabbing; --js-file runs a
+# script inside mw.web first (see scripts/landing_shot.js).
 #
 # Writes a JSON request into .context/screenshot-requests/; the Anki Design
 # dev-watch thread picks it up, grabs the matching top-level widget on the
@@ -20,6 +24,8 @@ EMBED_FLAG="false"
 CLOSE_FLAG="false"
 TRIGGER_KEY=""
 MW_WIDTH="0"
+MW_HEIGHT="0"
+JS_FILE=""
 for arg in "$@"; do
   case "$arg" in
     --open-addcards) OPEN_FLAG="true" ;;
@@ -31,6 +37,8 @@ for arg in "$@"; do
     --close-after) CLOSE_FLAG="true" ;;
     --trigger=*) TRIGGER_KEY="${arg#--trigger=}" ;;
     --width=*) MW_WIDTH="${arg#--width=}" ;;
+    --height=*) MW_HEIGHT="${arg#--height=}" ;;
+    --js-file=*) JS_FILE="${arg#--js-file=}" ;;
     --hover-add-btn) HOVER_FLAG="true" ;;
     --test-add) TEST_ADD="true" ;;
   esac
@@ -41,6 +49,13 @@ REPO="$(cd "$(dirname "$0")/.." && pwd)"
 DIR="$REPO/.context/screenshot-requests"
 mkdir -p "$DIR" "$(dirname "$OUT")"
 ABS_OUT="$(cd "$(dirname "$OUT")" && pwd)/$(basename "$OUT")"
+
+# --js-file ships arbitrary JS to run in mw.web just before the grab, so it
+# has to be JSON-escaped rather than interpolated raw into the heredoc.
+RUN_JS="null"
+if [[ -n "$JS_FILE" ]]; then
+  RUN_JS="$(python3 -c 'import json,sys; print(json.dumps(open(sys.argv[1]).read()))' "$JS_FILE")"
+fi
 
 # Stable filename ⇒ unique stamp per request
 REQ="$DIR/req-$(date +%s%N).json"
@@ -56,6 +71,8 @@ cat > "$REQ" <<JSON
   "close_after": ${CLOSE_FLAG},
   "trigger_shortcut": "${TRIGGER_KEY}",
   "mw_width": ${MW_WIDTH},
+  "mw_height": ${MW_HEIGHT},
+  "run_js": ${RUN_JS},
   "hover_add": ${HOVER_FLAG},
   "test_add": ${TEST_ADD},
   "delay_ms": 6500

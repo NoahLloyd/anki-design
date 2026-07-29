@@ -61,6 +61,42 @@ Pre-baked add-card states (handled by the request JSON, see `_dev_screenshot`):
 `--click-type`, `--embed-add`. These compose: `scripts/snap.sh out.png "add"
 --open-addcards --fill-sample --click-cog`.
 
+Sizing + scripted states:
+
+- `--width=N --height=N` resize `mw` before grabbing. **Resize and grab in two
+  separate calls** — WebEngine only paints what's currently on screen, so a
+  window that just grew renders the new area black. Warm it with a throwaway
+  snap, sleep ~3s, then take the real one.
+- `--js-file=path.js` runs a script inside `mw.web` just before the grab.
+  Unlike `echo "mweval:…" >> .context/cmd` this keeps newlines, so `//`
+  comments survive (a one-line `mweval:` comments out the rest of the script).
+
+### Marketing screenshots for anki.design
+
+`scripts/landing_shot.js` and `scripts/landing_shot_reviewer.js` dress the demo
+collection for the landing page — a curated deck list, non-zero learning
+counts, and a session histogram with a legible shape. They are **DOM-only**:
+nothing touches the collection and the next render wipes them.
+
+```bash
+make dev && make demo VARIANT=full
+# accent + theme come from a local (gitignored) meta.json:
+#   {"config": {"theme": "dark", "accent": "#dd5139", …}}
+# #dd5139 is the site's --primary, so the shot matches the page it lands on.
+
+scripts/snap.sh out/_warm.png main --width=1200 --height=1010   # warm, discard
+sleep 3
+scripts/snap.sh out/hero.png main --js-file=scripts/landing_shot.js
+```
+
+Two widths get shot: 1200px for desktop and 840px for phones. Downscaling the
+wide one to phone width just yields an illegible thumbnail, whereas re-shooting
+narrow lets Anki's own layout reflow. Reviewer equivalents use `--height=400`
+(wide) / `--height=430` (narrow) after `review:<did>` + `show`.
+
+The content column is capped at `--rf-measure: 720px`, so a window much wider
+than ~1200px just adds empty margins to the shot.
+
 ### Constraints
 
 - The Anki window must **exist and not be minimized to the dock**. WebEngine
