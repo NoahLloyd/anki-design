@@ -3762,6 +3762,28 @@ def _dev_run_cmd(raw: str) -> None:
                     except Exception:
                         pass
                 rv.web.evalWithCallback(js, _cb)
+        elif cmd.startswith("pyeval:"):
+            # Dev-only: exec arbitrary Python on the Qt main thread. `mw` is
+            # in scope; anything assigned to `result` is logged. Used by the
+            # showcase capture pipeline (window geometry, ui scale, etc.).
+            code = raw.split(":", 1)[1]
+            try:
+                ns: dict = {"mw": mw, "result": None}
+                exec(code, globals(), ns)
+                _dev_cmd_log(f"pyeval ok: result={ns.get('result')!r}")
+            except Exception as e:
+                _dev_cmd_log(f"pyeval err: {e!r}")
+        elif cmd.startswith("pyfile:"):
+            # Same, but reads the code from a file — survives newlines.
+            path = cmd.split(":", 1)[1].strip()
+            try:
+                with open(path) as fh:
+                    code = fh.read()
+                ns2: dict = {"mw": mw, "result": None}
+                exec(code, globals(), ns2)
+                _dev_cmd_log(f"pyfile ok: result={ns2.get('result')!r}")
+            except Exception as e:
+                _dev_cmd_log(f"pyfile err: {e!r}")
         elif cmd.startswith("dump_bottom"):
             # Print the bottom bar's outerHTML to stdout (via a tempfile).
             import json as _json
@@ -3990,6 +4012,24 @@ def _dev_cmd_start() -> None:
     t.start()
 
 
+def _dev_showcase_arrange() -> None:
+    """Dev-only, opt-in via AD_SHOWCASE env: pin the main window to a known
+    geometry and suppress the in-window menubar BEFORE the first webview
+    render. Doing this mid-session (resize + menubar relayout) can wedge
+    QtWebEngine's surface under a WM-less Xvfb, so it must happen here."""
+    if not _dev_active() or not os.environ.get("AD_SHOWCASE"):
+        return
+    try:
+        geo = os.environ.get("AD_SHOWCASE_GEO", "1200x1010")
+        w, h = (int(x) for x in geo.split("x"))
+        mw.form.menubar.setMaximumHeight(0)
+        mw.move(0, 0)
+        mw.resize(w, h)
+    except Exception:
+        pass
+
+
+gui_hooks.profile_did_open.append(_dev_showcase_arrange)
 gui_hooks.profile_did_open.append(_dev_start)
 gui_hooks.profile_did_open.append(_dev_cmd_start)
 gui_hooks.main_window_did_init.append(_dev_start)

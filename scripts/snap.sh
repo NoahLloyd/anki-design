@@ -49,6 +49,10 @@ REPO="$(cd "$(dirname "$0")/.." && pwd)"
 DIR="$REPO/.context/screenshot-requests"
 mkdir -p "$DIR" "$(dirname "$OUT")"
 ABS_OUT="$(cd "$(dirname "$OUT")" && pwd)/$(basename "$OUT")"
+# A stale file at the target path satisfies the wait loop instantly (the
+# watcher deletes the request before its render delay) — remove it so we
+# only ever return the freshly-grabbed frame.
+rm -f "$ABS_OUT"
 
 # --js-file ships arbitrary JS to run in mw.web just before the grab, so it
 # has to be JSON-escaped rather than interpolated raw into the heredoc.
@@ -75,7 +79,7 @@ cat > "$REQ" <<JSON
   "run_js": ${RUN_JS},
   "hover_add": ${HOVER_FLAG},
   "test_add": ${TEST_ADD},
-  "delay_ms": 6500
+  "delay_ms": ${SNAP_DELAY_MS:-6500}
 }
 JSON
 
