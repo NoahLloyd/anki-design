@@ -1,46 +1,52 @@
-# AnkiWeb listing — Anki Design (1809063985)
+# AnkiWeb listing (add-on 1809063985)
 
-Paste the HTML block below into the add-on's description on
-<https://ankiweb.net/shared/upload?id=1809063985>. AnkiWeb allows a small
-HTML subset (`<b> <i> <a> <img> <ul> <li> <br> <code>`); images must be
-absolute URLs, so they point at this repo's `docs/screenshots/` on the
-`main` branch.
+Paste the HTML below into the description field at
+<https://ankiweb.net/shared/upload?id=1809063985>. AnkiWeb accepts a small
+HTML subset (`<b> <i> <a> <img> <ul> <li> <br> <code>`). The images are
+served from this repo's `docs/screenshots/` folder on the `main` branch.
 
-Requires Anki 25.09+. Support page: <https://github.com/NoahLloyd/anki-design/issues>
+Requires Anki 25.09 or newer. Support page: <https://github.com/NoahLloyd/anki-design/issues>
 
 ---
 
-<b>Anki Design</b> redesigns Anki's deck list, reviewer, Add window, Browse, Stats and Preferences into one calm, editorial interface — and keeps every feature switchable, so you can turn off anything you don't want.
+<b>Anki Design</b> gives Anki a calmer, cleaner look. It redesigns the deck list, the reviewer, the Add window, Browse, Stats and Preferences. Everything it changes can be turned off in its settings.
 
 <img src="https://raw.githubusercontent.com/NoahLloyd/anki-design/main/docs/screenshots/home-light.png" width="700">
 
-<b>What you get</b>
-<ul>
-<li><b>Deck home</b> — a clean deck list with collapsible sub-decks (they open the way you left them, synced like Anki's own), a today panel with cards · minutes and a per-hour histogram, your streak, and a review-activity heatmap.</li>
-<li><b>Move decks by dragging</b> — drop a deck onto another to nest it, or onto the top-level zone to un-nest it. Or pick <i>Move to…</i> from a deck's gear menu.</li>
-<li><b>Reviewer</b> — a focused reading column with the deck name and queue counts in a quiet header, interval chips under the answer (or Anki's classic buttons), click-the-card to reveal, a thin progress bar, and in-place editing with <code>E</code>.</li>
-<li><b>Left sidebar</b> — Decks / Add / Browse / Stats, a ⌘K / Ctrl+K command palette that searches decks, cards, tags and actions, new-deck and import shortcuts, sync and settings.</li>
-<li><b>Add, Browse, Stats and Preferences</b> open inside the main window (each can also stay a separate window).</li>
-<li><b>Finished-deck page</b> — a session summary with an accuracy bar and a "keep going" list.</li>
-</ul>
+<b>Deck list</b><br>
+A plain list of your decks with collapsible sub-decks. They open the way you left them, using the same collapse state Anki syncs. Below the list you see what you studied today (cards, minutes and a chart per hour), your streak, and a review heatmap.
 
-<img src="https://raw.githubusercontent.com/NoahLloyd/anki-design/main/docs/screenshots/reviewer.png" width="700">
+<b>Moving decks</b><br>
+Drag a deck onto another deck to nest it. Drop it on the top-level zone to un-nest it. Or open the deck's gear menu and pick "Move to…" to choose from a list.
 
 <img src="https://raw.githubusercontent.com/NoahLloyd/anki-design/main/docs/screenshots/move-deck.png" width="700">
 
-<b>Make it yours</b><br>
-<i>Tools → Anki Design Settings…</i> has a switch for everything: theme (system / light / dark), accent colour, page background (paper, white, black or any colour), density, fonts, sub-decks on startup (remember / expanded / collapsed), the single-deck hero, click-to-study vs. Anki's overview page, card styling (keep your own note-type CSS untouched), answer-button style, click-to-reveal, press feedback, in-place editing, the command palette, inline windows, the redesigned Add window, the finished-deck page, quiet sync, the heatmap and its palette.
+<b>Reviewer</b><br>
+A focused reading column. The deck name and the queue counts sit in a small header. Under the answer you see the next interval for each button. Click the card to show the answer. A thin progress bar runs along the top. Press E to edit the card in place.
+
+<img src="https://raw.githubusercontent.com/NoahLloyd/anki-design/main/docs/screenshots/reviewer.png" width="700">
+
+<b>Sidebar</b><br>
+Decks, Add, Browse, Stats, sync and settings on the left. Cmd+K (Ctrl+K on Windows and Linux) opens a search box that finds decks, cards, tags and actions. Add, Browse, Stats and Preferences open inside the main window.
+
+<img src="https://raw.githubusercontent.com/NoahLloyd/anki-design/main/docs/screenshots/add-card.png" width="700">
+
+<b>Settings</b><br>
+Open Tools &gt; Anki Design Settings. You can pick the theme (system, light or dark), the accent colour, the page background (paper, white, black or any colour), the density and the fonts. Sub-decks on startup can be remembered, expanded or collapsed. In the reviewer you can keep your own note type styling and switch back to Anki's answer buttons. The sidebar, the search box, the inline windows, the today panel, the heatmap and the rest of the changes each have their own switch.
 
 <img src="https://raw.githubusercontent.com/NoahLloyd/anki-design/main/docs/screenshots/settings.png" width="700">
 
 <img src="https://raw.githubusercontent.com/NoahLloyd/anki-design/main/docs/screenshots/home-dark.png" width="700">
 
-<img src="https://raw.githubusercontent.com/NoahLloyd/anki-design/main/docs/screenshots/add-card.png" width="700">
-
 <b>Requirements</b><br>
-Anki <b>25.09 or newer</b> (older versions will refuse the install). Conflicts with Onigiri, Review Heatmap and the Progress Bar add-on, which it replaces. No network access, no bundled binaries.
+Anki 25.09 or newer. Older versions will refuse to install it. It replaces Onigiri, Review Heatmap and the Progress Bar add-on, so disable those first. No network access, nothing bundled.
 
 <b>Links</b><br>
-Website: <a href="https://anki.design">anki.design</a> · Source &amp; issues: <a href="https://github.com/NoahLloyd/anki-design">github.com/NoahLloyd/anki-design</a> · Changelog: <a href="https://github.com/NoahLloyd/anki-design/blob/main/CHANGELOG.md">CHANGELOG.md</a>
+Website: <a href="https://anki.design">anki.design</a><br>
+Source and issues: <a href="https://github.com/NoahLloyd/anki-design">github.com/NoahLloyd/anki-design</a><br>
+Changelog: <a href="https://github.com/NoahLloyd/anki-design/blob/main/CHANGELOG.md">CHANGELOG.md</a>
 
-<b>0.3.0</b> — sub-decks keep their collapsed state, drag-and-drop / Move to… for decks, sub-decks shown under the single-deck hero, background colour options, keep-your-own card styling, Anki's classic answer buttons, and a switch for every feature. Free and open source (MIT).
+<b>New in 0.3.0</b><br>
+Sub-decks keep their collapsed state. Drag and drop, or "Move to…", for moving decks. Sub-decks are listed under the single-deck view. Background colour options. Keep your own card styling. Anki's classic answer buttons. A switch for every feature.
+
+Free and open source (MIT).
