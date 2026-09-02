@@ -144,3 +144,111 @@
 @media (max-width: 480px) {
   .ba-home input.ad-deck-rename--hero { font-size: 17px !important; }
 }
+
+/* ---- Move-to picker (deckopts.js → openMovePicker) ----------------------
+   The menu body is swapped for a header, a search field and a scrolling
+   list of candidate parents. Same panel, so it stays anchored to the gear. */
+.ad-menu.ad-menu--picker {
+  min-width: 264px;
+  max-width: 340px;
+}
+.ad-menu .ad-menu-picker-h {
+  padding: 6px 10px 8px;
+  font: 500 12px/1.3 var(--rf-sans, sans-serif);
+  color: var(--rf-ink-dim, #4a4538);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ad-menu .ad-menu-picker-h b {
+  font-weight: 600;
+  color: var(--rf-ink, #1a1a1a);
+}
+/* Anki's `.fancy input` paints native chrome on every input — strip it. */
+.ad-menu input.ad-menu-picker-q,
+.ad-menu input.ad-menu-picker-q:focus {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0 0 6px;
+  padding: 7px 10px;
+  font: 500 13px/1.2 var(--rf-sans, sans-serif);
+  color: var(--rf-ink, #1a1a1a);
+  background: var(--rf-row-hover, rgba(0, 0, 0, 0.04)) !important;
+  border: 1px solid var(--rf-line, #e3decf) !important;
+  border-radius: 7px !important;
+  outline: 0 !important;
+  box-shadow: none !important;
+  -webkit-appearance: none;
+  appearance: none;
+  caret-color: var(--rf-accent, #6c8cff);
+}
+.ad-menu input.ad-menu-picker-q:focus {
+  border-color: var(--rf-line-2, #cfc8b6) !important;
+}
+.ad-menu input.ad-menu-picker-q::placeholder {
+  color: var(--rf-ink-faint, #8b8576);
+}
+.ad-menu .ad-menu-picker-list {
+  max-height: 232px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.ad-menu .ad-menu-pick {
+  padding: 7px 10px;
+  font-size: 12.5px;
+}
+.ad-menu .ad-menu-pick .ad-menu-l {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ad-menu .ad-menu-pick.is-active {
+  background: var(--rf-row-hover, rgba(0, 0, 0, 0.04));
+}
+.ad-menu .ad-menu-pick--top .ad-menu-l {
+  color: var(--rf-ink-dim, #4a4538);
+  font-style: italic;
+}
+.ad-menu .ad-menu-picker-empty {
+  padding: 10px;
+  font: 500 12px/1.3 var(--rf-sans, sans-serif);
+  color: var(--rf-ink-faint, #8b8576);
+  text-align: center;
+}
+/* Inline rename inside the shared list rows (same metrics as the name
+   button, so nothing shifts when the input swaps in). */
+.ad-list-row input.ad-deck-rename,
+.ad-list-row input.ad-deck-rename:focus {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 4px 4px !important;
+  margin: 0 !important;
+  color: var(--rf-ink) !important;
+  font: 500 16px/1.25 var(--rf-serif) !important;
+  letter-spacing: -0.005em;
+  background: transparent !important;
+  border: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  -webkit-appearance: none;
+  appearance: none;
+  caret-color: var(--rf-ink-strong, var(--rf-ink));
+}
+.ad-list-row[data-depth="1"] input.ad-deck-rename,
+.ad-list-row[data-depth="2"] input.ad-deck-rename,
+.ad-list-row[data-depth="3"] input.ad-deck-rename {
+  font-weight: 400 !important;
+  font-size: 15px !important;
+}
+/* Slim, paper-toned scrollbar inside the picker list (the default gutter
+   paints a white column against the panel). */
+.ad-menu .ad-menu-picker-list::-webkit-scrollbar { width: 6px; }
+.ad-menu .ad-menu-picker-list::-webkit-scrollbar-track { background: transparent; }
+.ad-menu .ad-menu-picker-list::-webkit-scrollbar-thumb {
+  background: var(--rf-line-2, #cfc8b6);
+  border-radius: 3px;
+}

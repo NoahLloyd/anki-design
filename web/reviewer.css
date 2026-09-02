@@ -39,6 +39,15 @@
 }
 
 html, body {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+/* Page paper + ink. Gated on Settings → Reviewer → "Style card content":
+   with it off (`data-rf-cardstyle="native"`) the note type's own .card
+   colours reach the body untouched, exactly as in stock Anki, and only
+   the chrome strips (header, ease keys) keep the paper tone. */
+html:not([data-rf-cardstyle="native"]),
+html:not([data-rf-cardstyle="native"]) body {
   background: var(--rf-paper) !important;
   background-image: none !important;
   background-position: 0 0 !important;
@@ -46,8 +55,11 @@ html, body {
   background-size: auto !important;
   background-repeat: no-repeat !important;
   color: var(--rf-ink) !important;
-  margin: 0 !important;
-  padding: 0 !important;
+}
+html[data-rf-cardstyle="native"] { background: var(--rf-paper); }
+html[data-rf-cardstyle="native"] .ba-rv-head,
+html[data-rf-cardstyle="native"] .ba-rv-ease {
+  background: var(--rf-paper);
 }
 
 /* Anki sets `<body class="card cardN">` on the reviewer and adds inline
@@ -58,7 +70,6 @@ html, body {
    The bottom bar lives in a separate webview so we just leave room with
    padding-bottom. */
 body {
-  font-family: var(--rf-serif) !important;
   /* Lock the body to the viewport so the ease selector at grid-row 3 stays
      pinned to the bottom even on long cards. `min-height: 100vh` alone lets
      the body grow past the viewport when card content overflows, and the
@@ -76,14 +87,17 @@ body {
   background-attachment: scroll !important;
   background-size: auto !important;
   background-repeat: no-repeat !important;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+/* Body typography — ours by default, the note type's when card styling
+   is off. --rf-card-font-size carries the Settings → Reviewer font size. */
+html:not([data-rf-cardstyle="native"]) body {
+  font-family: var(--rf-serif) !important;
   color: var(--rf-ink) !important;
   text-align: center;
   line-height: 1.5;
-  /* Honor the user's reviewer-font-size setting (Settings → Reviewer →
-     Font size); the value comes through as --rf-card-font-size. */
   font-size: var(--rf-card-font-size, 28px);
-  box-sizing: border-box;
-  overflow: hidden;
 }
 
 /* Anki's reviewer.css sets margin:20px and a hairline `hr` rule — we wipe
@@ -94,7 +108,7 @@ body.card { max-width: none !important; }
    Some templates wrap content in <div class="card">; respect the
    reviewer-card-width / reviewer-font-size settings the user picked in
    the Settings tab. */
-:not(body).card {
+html:not([data-rf-cardstyle="native"]) :not(body).card {
   max-width: var(--rf-card-max-width, 720px);
   margin: 0 auto;
   font-size: var(--rf-card-font-size, 28px);
@@ -472,17 +486,19 @@ body.card { max-width: none !important; }
   margin: 0 auto;
   box-sizing: border-box;
   min-height: 0;
+  overflow-y: auto;
+}
+html:not([data-rf-cardstyle="native"]) #qa {
   font-size: var(--rf-card-font-size, 28px);
   line-height: 1.5;
   letter-spacing: -0.005em;
-  overflow-y: auto;
 }
 
 /* The card content itself is rendered as-is (note-type CSS wins). We just
    give it a comfortable reading column so long answers wrap kindly, AND
    we promote the inherited size so default note-types feel substantial. */
 #qa > * { max-width: 100%; }
-.card {
+html:not([data-rf-cardstyle="native"]) .card {
   color: var(--rf-ink) !important;
   background: transparent !important;
   /* Override note-type's 20px default with the user's chosen size from
@@ -492,8 +508,8 @@ body.card { max-width: none !important; }
 
 /* The answer divider — a quiet hairline, no caption. Anki's internal
    reviewer.css sets a thick #737373 bar on every `hr`; this overrides. */
-#qa hr#answer,
-hr#answer {
+html:not([data-rf-cardstyle="native"]) #qa hr#answer,
+html:not([data-rf-cardstyle="native"]) hr#answer {
   all: unset;
   display: block;
   height: 1px;
@@ -504,7 +520,7 @@ hr#answer {
 }
 /* Any other `<hr>` inside the card should respect our hairline, not the
    default 1em-margin #737373 slab from Anki's reviewer.css. */
-#qa hr {
+html:not([data-rf-cardstyle="native"]) #qa hr {
   background: var(--rf-line) !important;
   height: 1px !important;
   border: 0 !important;

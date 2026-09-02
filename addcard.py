@@ -95,15 +95,24 @@ def _resolve_palette() -> Tuple[Dict[str, str], bool]:
     cfg = _config()
     pref = cfg.get("theme", "system")
     if pref == "dark":
-        return PAL_DARK, True
-    if pref == "light":
-        return PAL_LIGHT, False
+        is_dark = True
+    elif pref == "light":
+        is_dark = False
+    else:
+        try:
+            c = QApplication.palette().color(QPalette.ColorRole.Window)
+            is_dark = (c.red() + c.green() + c.blue()) < 384
+        except Exception:
+            is_dark = True
+    pal = PAL_DARK if is_dark else PAL_LIGHT
+    # Background override (Settings → Appearance) so the Qt-side chrome of
+    # the embeds matches the page paper.
     try:
-        c = QApplication.palette().color(QPalette.ColorRole.Window)
-        is_dark = (c.red() + c.green() + c.blue()) < 384
-        return (PAL_DARK if is_dark else PAL_LIGHT), is_dark
+        from . import colors as _colors
+        pal = _colors.apply_background(pal, cfg, is_dark)
     except Exception:
-        return PAL_DARK, True
+        pass
+    return pal, is_dark
 
 
 def _qss(p: Dict[str, str], accent: str) -> str:
@@ -781,6 +790,9 @@ def _redress(addcards: AddCards) -> None:
 
 
 def on_add_cards_did_init(addcards: AddCards) -> None:
+    # Settings → Windows → "Redesigned Add window". Off = stock Anki.
+    if not _config().get("restyle_addcard", True):
+        return
     try:
         _redress(addcards)
     except Exception as e:

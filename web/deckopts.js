@@ -19,6 +19,9 @@
   // Lightweight stroke set matching the sidebar icons.
   var ICONS = {
     rename:  '<path d="M4 20h4l11-11-4-4L4 16v4z"/><path d="M14 6l4 4"/>',
+    move:    '<path d="M5 9l-3 3 3 3"/><path d="M9 5l3-3 3 3"/>'
+           + '<path d="M15 19l-3 3-3-3"/><path d="M19 9l3 3-3 3"/>'
+           + '<path d="M2 12h20"/><path d="M12 2v20"/>',
     options: '<circle cx="12" cy="12" r="3"/>'
            + '<path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1'
            + 'a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1'
@@ -41,6 +44,7 @@
   // Each entry: { cmd, label, icon, danger?, sep_before? }
   var ITEMS = [
     { cmd: "rename",  label: "Rename",           icon: "rename" },
+    { cmd: "move",    label: "Move to…",         icon: "move" },
     { cmd: "options", label: "Options…",         icon: "options" },
     { cmd: "export",  label: "Export deck…",     icon: "export" },
     { cmd: "rebuild", label: "Rebuild (filtered)", icon: "rebuild" },
@@ -100,6 +104,9 @@
         e.preventDefault();
         e.stopPropagation();
         var cmd = btn.getAttribute("data-cmd");
+        // "Move to…" swaps the menu for an inline deck picker (same
+        // popover, no dialog). Everything else closes the menu first.
+        if (cmd === "move") { openMovePicker(did); return; }
         close();
         // Rename happens inline on the home-page row when possible.
         // Falls back to the native dialog (handled by Python) if the
@@ -133,6 +140,11 @@
     var anchor = document.querySelector('h1.ba-deck-name[data-did="' + did + '"]');
     if (anchor && anchor.offsetParent === null) anchor = null;
     if (!anchor) {
+      // Shared deck-list rows (home page + congrats Keep-going list).
+      anchor = document.querySelector('.ad-list-row[data-did="' + did + '"] > .ad-list-name');
+      if (anchor && anchor.offsetParent === null) anchor = null;
+    }
+    if (!anchor) {
       anchor = document.querySelector('tr.deck[id="' + did + '"] td.decktd > a.deck');
       if (anchor && anchor.offsetParent === null) anchor = null;
     }
@@ -162,9 +174,11 @@
     anchor.style.display = "none";
     anchor.parentNode.insertBefore(input, anchor.nextSibling);
 
-    // Prevent the row's open-deck click handler from firing while editing.
+    // Prevent the row's open-deck click handler from firing while editing,
+    // and keep the row's drag-to-move from hijacking a text selection.
     input.addEventListener("mousedown", function (e) { e.stopPropagation(); });
     input.addEventListener("click", function (e) { e.stopPropagation(); });
+    input.addEventListener("dragstart", function (e) { e.preventDefault(); e.stopPropagation(); });
 
     var done = false;
     function cancel() {
@@ -205,6 +219,129 @@
       try { input.select(); } catch (_) {}
     });
     return true;
+  }
+
+  /* Move-to picker — replaces the menu body with a searchable list of
+     every deck the chosen deck can move under, plus "Top level". Picking
+     one dispatches `ba:deck:reparent:<did>:<target>` (Anki's own reparent
+     op, the same thing its drag-and-drop does). Data comes from
+     window.__baDeckTree — the flat, depth-tagged tree Python injects on
+     the home page and the congrats page. */
+  function deckCandidates(did) {
+    var tree = window.__baDeckTree || [];
+    var out = [];
+    var self = null, selfIdx = -1, i;
+    for (i = 0; i < tree.length; i++) {
+      if (String(tree[i].did) === String(did)) { self = tree[i]; selfIdx = i; break; }
+    }
+    var blocked = {};
+    blocked[String(did)] = 1;
+    var selfDepth = self ? (self.depth || 0) : 0;
+    if (selfIdx >= 0) {
+      for (i = selfIdx + 1; i < tree.length; i++) {          // descendants
+        if ((tree[i].depth || 0) <= selfDepth) break;
+        blocked[String(tree[i].did)] = 1;
+      }
+      for (i = selfIdx - 1; i >= 0; i--) {                    // current parent
+        if ((tree[i].depth || 0) < selfDepth) { blocked[String(tree[i].did)] = 1; break; }
+      }
+    }
+    if (selfDepth > 0) out.push({ did: 0, path: "Top level", top: true });
+    for (i = 0; i < tree.length; i++) {
+      var d = tree[i];
+      if (blocked[String(d.did)]) continue;
+      if (d.filtered) continue;  // filtered decks can't hold sub-decks
+      out.push({ did: d.did, path: d.path || d.name || "", depth: d.depth || 0 });
+    }
+    return { self: self, items: out };
+  }
+
+  function escapeHTML(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' })[c];
+    });
+  }
+
+  function openMovePicker(did) {
+    var menu = CURRENT;
+    if (!menu) return;
+    var data = deckCandidates(did);
+    var name = data.self ? (data.self.name || data.self.path || "") : "";
+    menu.classList.add("ad-menu--picker");
+    menu.innerHTML = ''
+      + '<div class="ad-menu-picker">'
+      +   '<div class="ad-menu-picker-h">Move <b>' + escapeHTML(name) + '</b> to</div>'
+      +   '<input class="ad-menu-picker-q" type="text" autocomplete="off" '
+      +          'spellcheck="false" placeholder="Search decks…" aria-label="Search decks">'
+      +   '<div class="ad-menu-picker-list" role="listbox"></div>'
+      + '</div>';
+    var input = menu.querySelector(".ad-menu-picker-q");
+    var list = menu.querySelector(".ad-menu-picker-list");
+
+    function paint(q) {
+      q = (q || "").trim().toLowerCase();
+      var html = "";
+      var shown = 0;
+      data.items.forEach(function (it) {
+        if (q && it.path.toLowerCase().indexOf(q) === -1) return;
+        shown++;
+        html += '<button type="button" class="ad-menu-item ad-menu-pick'
+              + (it.top ? ' ad-menu-pick--top' : '')
+              + (shown === 1 ? ' is-active' : '')
+              + '" role="option" data-target="' + it.did + '">'
+              + '<span class="ad-menu-l">' + escapeHTML(it.path) + '</span>'
+              + '</button>';
+      });
+      if (!shown) html = '<div class="ad-menu-picker-empty">No matching deck</div>';
+      list.innerHTML = html;
+    }
+    function active() { return list.querySelector(".ad-menu-pick.is-active"); }
+    function moveActive(dir) {
+      var all = Array.prototype.slice.call(list.querySelectorAll(".ad-menu-pick"));
+      if (!all.length) return;
+      var idx = all.indexOf(active());
+      var next = Math.max(0, Math.min(all.length - 1, idx + dir));
+      all.forEach(function (b, i) { b.classList.toggle("is-active", i === next); });
+      try { all[next].scrollIntoView({ block: "nearest" }); } catch (_) {}
+    }
+    function pick(btn) {
+      if (!btn) return;
+      var target = btn.getAttribute("data-target") || "0";
+      close();
+      send("deck:reparent:" + did + ":" + target);
+    }
+
+    paint("");
+    input.addEventListener("input", function () { paint(input.value); });
+    // Keep every key inside the picker: Anki's page-level shortcuts
+    // (a/b/d/s/t/y) and the rename/cmdk handlers must not see them.
+    ["keydown", "keyup", "keypress"].forEach(function (ev) {
+      input.addEventListener(ev, function (e) { e.stopPropagation(); });
+    });
+    input.addEventListener("keydown", function (e) {
+      if (e.key === "ArrowDown") { e.preventDefault(); moveActive(+1); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); moveActive(-1); }
+      else if (e.key === "Enter") { e.preventDefault(); pick(active()); }
+      else if (e.key === "Escape") { e.preventDefault(); close(); }
+    });
+    list.addEventListener("mousemove", function (e) {
+      var b = e.target.closest && e.target.closest(".ad-menu-pick");
+      if (!b || b.classList.contains("is-active")) return;
+      Array.prototype.forEach.call(list.querySelectorAll(".ad-menu-pick"), function (x) {
+        x.classList.toggle("is-active", x === b);
+      });
+    });
+    list.addEventListener("click", function (e) {
+      var b = e.target.closest && e.target.closest(".ad-menu-pick");
+      if (!b) return;
+      e.preventDefault();
+      e.stopPropagation();
+      pick(b);
+    });
+    // Re-anchor: the picker is taller than the menu it replaced, so the
+    // flip-up/flip-down decision has to be made again.
+    if (menu._anchor) position(menu, menu._anchor);
+    requestAnimationFrame(function () { try { input.focus(); } catch (_) {} });
   }
 
   function position(menu, anchor) {

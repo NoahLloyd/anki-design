@@ -574,15 +574,12 @@ def _close_all_embeds() -> None:
 
 
 def _open_browser_with_query(query: str) -> None:
-    """Open the embedded Browser and run a search."""
+    """Open the Browser (inline embed or Anki's window, per Settings) and
+    run a search."""
     try:
-        from . import browse_embed
-        browse_embed.open_inline(mw)
+        mw.onBrowse()
     except Exception:
-        try:
-            mw.onBrowse()
-        except Exception:
-            return
+        return
     # Push the query after the Browser has settled. find_widget lazily —
     # the embed's `_state["browser"]` is set once construction completes.
     def _apply():
@@ -805,31 +802,17 @@ def _dispatch_top_level(key: str) -> None:
         if key == "decks":
             mw.moveToState("deckBrowser")
         elif key == "add":
-            try:
-                from . import addcard_embed
-                addcard_embed.open_inline(mw)
-            except Exception:
-                mw.onAddCard()
+            # mw.onAddCard/onBrowse/onStats/onPrefs are patched by
+            # __init__.py to honour the inline-window toggles.
+            mw.onAddCard()
         elif key == "browse":
-            try:
-                from . import browse_embed
-                browse_embed.open_inline(mw)
-            except Exception:
-                mw.onBrowse()
+            mw.onBrowse()
         elif key == "stats":
-            try:
-                from . import stats_embed
-                stats_embed.open_inline(mw)
-            except Exception:
-                mw.onStats()
+            mw.onStats()
         elif key == "sync":
             mw.on_sync_button_clicked()
         elif key == "settings":
-            try:
-                from . import settings_embed
-                settings_embed.open_inline(mw)
-            except Exception:
-                pass
+            mw.onPrefs()
         elif key == "import":
             mw.onImport()
         elif key == "undo":

@@ -198,3 +198,51 @@
 .ad-list-gear:hover .ad-list-gear-img { opacity: 1; }
 .ad-list-gear:focus { outline: none; }
 .ad-list-gear:focus-visible { outline: 2px solid var(--rf-line-2); outline-offset: 2px; }
+
+/* ---- Drag to move (Settings → Deck list → "Drag decks to move them") ----
+   The row is the drag source; the row under the pointer is the drop
+   target (tinted with the accent), and a dashed "top level" zone appears
+   above the list while a nested deck is in flight. */
+.ad-list-row[draggable="true"] { cursor: grab; }
+.ad-list--dragging,
+.ad-list--dragging .ad-list-row,
+.ad-list--dragging .ad-list-row * { cursor: grabbing; }
+.ad-list-row--dragging { opacity: 0.35; }
+.ad-list--dragging .ad-list-row:not(.ad-list-row--dragging) .ad-list-name {
+  text-decoration: none !important;
+}
+.ad-list-row--drop {
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--rf-accent, #6c8cff) 12%, transparent) !important;
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--rf-accent, #6c8cff) 45%, transparent);
+}
+.ad-list-row--drop .ad-list-name { color: var(--rf-ink-strong); }
+.ad-list-dropzone {
+  display: none;
+  margin: 0 6px 8px;
+  padding: 9px 12px;
+  border: 1px dashed var(--rf-line-2);
+  border-radius: 8px;
+  font: 500 12px/1.2 var(--rf-sans);
+  letter-spacing: 0.01em;
+  color: var(--rf-ink-faint);
+  text-align: center;
+  transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+.ad-list-dropzone--show { display: block; }
+.ad-list-dropzone--over {
+  color: var(--rf-ink);
+  border-color: var(--rf-accent, #6c8cff);
+  background: color-mix(in oklab, var(--rf-accent, #6c8cff) 10%, transparent);
+}
+
+/* Section label above a nested list (the sub-decks under a single-deck
+   hero). Same quiet caps as the heatmap foot. */
+.ad-list-h {
+  margin: 0 0 6px 6px;
+  font: 600 10px/1 var(--rf-sans);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--rf-ink-faint);
+  text-align: left;
+}
