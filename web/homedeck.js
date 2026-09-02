@@ -6,6 +6,11 @@
 // by Python in _full_deck_tree_payload). Both views share one render path
 // so the row markup, chevron, gear, collapse logic, and styling are
 // literally the same code in both places.
+//
+// Single-deck mode: the Python-rendered hero stands in for the one
+// top-level row, and this script lists that deck's sub-decks (re-based to
+// depth 0) directly under it — so a user whose whole collection lives in
+// "All::…" still sees and can open every sub-deck.
 (function () {
   "use strict";
   if (window.__adHomeDeckWired) return;
@@ -19,13 +24,32 @@
     } catch (_) {}
   }
 
-  function getContainer() {
+  function getContainer(single) {
     var existing = document.querySelector('.ad-list--home');
     if (existing) return existing;
     var center = document.querySelector('.ba-home') || document.querySelector('center');
     if (!center) return null;
     var div = document.createElement('div');
     div.className = 'ad-list ad-list--home';
+    if (single) {
+      // Under the hero: a labelled block so the rows read as "the
+      // sub-decks of the deck above", not a second, unrelated list.
+      var wrap = document.createElement('section');
+      wrap.className = 'ad-list-wrap ad-list-wrap--sub';
+      wrap.setAttribute('aria-label', 'Sub-decks');
+      var h = document.createElement('div');
+      h.className = 'ad-list-h';
+      h.textContent = 'Sub-decks';
+      wrap.appendChild(h);
+      wrap.appendChild(div);
+      var hero = center.querySelector(':scope > .ba-hero');
+      if (hero && hero.parentNode) {
+        hero.parentNode.insertBefore(wrap, hero.nextSibling);
+      } else {
+        center.insertBefore(wrap, center.firstChild);
+      }
+      return div;
+    }
     // Insert before Anki's table so visual order matches (table is hidden
     // by CSS but Anki's other practice/heatmap blocks still follow it).
     var table = center.querySelector(':scope > table');
@@ -40,21 +64,30 @@
   function paint() {
     if (!dl()) return;
     var data = window.__baDeckTree || [];
-    var container = getContainer();
+    var single = !!document.querySelector('.ba-home.ba-single');
+    if (single) {
+      data = data
+        .filter(function (d) { return (d.depth || 0) >= 1; })
+        .map(function (d) {
+          var c = {};
+          for (var k in d) if (Object.prototype.hasOwnProperty.call(d, k)) c[k] = d[k];
+          c.depth = (d.depth || 0) - 1;
+          return c;
+        });
+      if (!data.length) return;  // a lone deck with no children: hero only
+    }
+    var container = getContainer(single);
     if (!container) return;
     dl().render(container, data, {
       // Clicking a deck row in Anki's table fires `open:<did>` which our
-      // hook in __init__.py rewrites to "start studying" (skips overview).
-      // Same dispatch keeps that behaviour.
+      // hook in __init__.py rewrites to "start studying" (skips overview
+      // unless that's switched off in Settings). Same dispatch keeps that
+      // behaviour.
       onStudy: function (did) { bridge('open:' + did); },
     });
   }
 
   function init() {
-    // Single-deck mode owns the page (the Python-rendered hero replaces
-    // Anki's table; CSS hides the table). Rendering the shared deck-list
-    // on top of that duplicates the deck.
-    if (document.querySelector('.ba-home.ba-single')) return;
     // Anki re-renders the deck browser by calling `mw.deckBrowser.refresh()`,
     // which causes webview_will_set_content to fire and the whole page (this
     // script included) to reload. So we only need to render once at startup.

@@ -143,10 +143,22 @@ def _on_state_shortcuts_will_change(state: str, shortcuts: list) -> None:
 # --------------------------------------------------------------------------- #
 # Enter / exit edit mode.
 # --------------------------------------------------------------------------- #
+def _inline_edit_enabled() -> bool:
+    try:
+        cfg = mw.addonManager.getConfig(__name__.split(".")[0]) or {}
+        return bool(cfg.get("inline_edit", True))
+    except Exception:
+        return True
+
+
 def _enter_inline_edit() -> None:
     """Ask the reviewer webview to enter inline edit mode. If anything
-    goes wrong (no reviewer, no card, or the JS hasn't loaded yet) we
-    fall back to Anki's native EditCurrent dialog."""
+    goes wrong (no reviewer, no card, or the JS hasn't loaded yet) — or
+    the user switched inline editing off — open Anki's native EditCurrent
+    dialog instead."""
+    if not _inline_edit_enabled():
+        _open_full_editor()
+        return
     rv = getattr(mw, "reviewer", None)
     if rv is None or getattr(rv, "card", None) is None:
         _open_full_editor()

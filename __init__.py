@@ -67,6 +67,78 @@ def _config() -> Dict[str, Any]:
     return mw.addonManager.getConfig(__name__) or {}
 
 
+def _hero_mode(cfg: Optional[Dict[str, Any]] = None) -> bool:
+    """True when the home page should show the single-deck hero: the user
+    has exactly one top-level deck AND hasn't switched the hero off."""
+    cfg = cfg if cfg is not None else _config()
+    if not cfg.get("single_deck_hero", True):
+        return False
+    try:
+        return _top_decks_count() == 1
+    except Exception:
+        return False
+
+
+def _background_rules(cfg: Dict[str, Any]) -> str:
+    """CSS rule blocks that swap the page paper (and the derived panel /
+    Anki --canvas tokens) for the user's background overrides. Emits
+    nothing while both settings are blank, so the default paper is
+    untouched."""
+    from . import colors as _colors
+    out = ""
+    light = _colors.background_override(cfg, dark=False)
+    if light:
+        paper, panel = light
+        decl = (
+            f"--rf-paper:{paper}!important;--rf-panel:{panel}!important;"
+            f"--rf-bg:{paper}!important;--canvas:{paper}!important;"
+            f"--canvas-elevated:{panel}!important;--canvas-inset:{paper}!important;"
+        )
+        out += (
+            f":root[data-rf-theme=\"light\"]{{{decl}}}"
+            f"@media (prefers-color-scheme:light)"
+            f"{{:root:not([data-rf-theme=\"dark\"]){{{decl}}}}}"
+        )
+    dark = _colors.background_override(cfg, dark=True)
+    if dark:
+        paper, panel = dark
+        decl = (
+            f"--rf-paper:{paper}!important;--rf-panel:{panel}!important;"
+            f"--rf-bg:{paper}!important;--canvas:{paper}!important;"
+            f"--canvas-elevated:{panel}!important;--canvas-inset:{paper}!important;"
+        )
+        out += (
+            f":root[data-rf-theme=\"dark\"]{{{decl}}}"
+            f"@media (prefers-color-scheme:dark)"
+            f"{{:root:not([data-rf-theme=\"light\"]){{{decl}}}}}"
+        )
+    return out
+
+
+def _js_opts(cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """Feature flags handed to the page scripts as `window.__baOpts`.
+    Every key mirrors a Settings toggle; the JS treats a missing key as
+    "on" so older payloads keep working."""
+    startup = str(cfg.get("deck_tree_startup", "remember") or "remember")
+    if startup not in ("remember", "expanded", "collapsed"):
+        startup = "remember"
+    return {
+        "cmdk": bool(cfg.get("cmdk", True)),
+        "skipOverview": bool(cfg.get("skip_overview", True)),
+        "deckList": {
+            "startup": startup,
+            "dragMove": bool(cfg.get("deck_drag_move", True)),
+            "singleHero": bool(cfg.get("single_deck_hero", True)),
+        },
+        "reviewer": {
+            "clickToReveal": bool(cfg.get("click_to_reveal", True)),
+            "pressFeedback": bool(cfg.get("press_feedback", True)),
+            "cardStyling": bool(cfg.get("reviewer_card_styling", True)),
+            "answerButtons": str(cfg.get("reviewer_answer_buttons", "intervals")),
+        },
+    }
+
+
 # Fixed-palette heatmaps. Four shades, low intensity → high.
 # Dark-mode set: eyeballed against the near-black canvas (#0b0c0f).
 # Light-mode set: eyeballed against the cream canvas (#f6f3ec) — the
@@ -196,6 +268,9 @@ def on_webview_will_set_content(web_content: WebContent, context: Optional[Any])
     # Heatmap palette — emits its own rule block (light + dark variants),
     # so its rules can stand outside the single-rule injection below.
     hm_rules = _heatmap_palette_decl(palette_choice, accent)
+    # Background overrides (Settings → Appearance → Background). Blank
+    # settings emit nothing, so the theme's own paper stays in charge.
+    bg_rules = _background_rules(cfg)
 
     # tokens.css derives --accent from --rf-accent; inject the latter here.
     # `data-rf-theme` on <html> forces light/dark over the system @media.
@@ -204,14 +279,26 @@ def on_webview_will_set_content(web_content: WebContent, context: Optional[Any])
     if theme_pref in ("light", "dark"):
         extras += f"d.dataset.rfTheme='{theme_pref}';"
     extras += f"d.dataset.rfDensity='{density}';"
+    if isinstance(context, Reviewer):
+        # "native" hands the card's typography/colours back to the note
+        # type; reviewer.css gates every content-affecting rule on it.
+        if not cfg.get("reviewer_card_styling", True):
+            extras += "d.dataset.rfCardstyle='native';"
+        if cfg.get("reviewer_answer_buttons", "intervals") == "native":
+            extras += "d.dataset.rfEase='native';"
     extras += "})();</script>"
+    # Feature flags read by the page scripts (deck list, reviewer, sidebar).
+    import json as _json
+    opts_js = (
+        "<script>window.__baOpts=" + _json.dumps(_js_opts(cfg)) + ";</script>"
+    )
 
     web_content.head += (
         f"<style>:root,.night-mode,body{{"
         f"--rf-accent:{accent};"
         f"{serif_decl}{sans_decl}{reviewer_decl}"
-        f"}}{hm_rules}</style>"
-        + extras
+        f"}}{hm_rules}{bg_rules}</style>"
+        + extras + opts_js
     )
     web_content.css.append(f"{WEB}/tokens.css")
 
@@ -225,8 +312,9 @@ def on_webview_will_set_content(web_content: WebContent, context: Optional[Any])
         # Cmd-K palette is available on every themed surface (deck browser,
         # overview, reviewer). cmdk.js owns the hotkey and the overlay DOM;
         # the matching Python search backend lives in cmdk.py.
-        web_content.css.append(f"{WEB}/cmdk.css")
-        web_content.js.append(f"{WEB}/cmdk.js")
+        if cfg.get("cmdk", True):
+            web_content.css.append(f"{WEB}/cmdk.css")
+            web_content.js.append(f"{WEB}/cmdk.js")
     if isinstance(context, DeckBrowser):
         web_content.css.append(f"{WEB}/heatmap.css")
         web_content.js.append(f"{WEB}/heatmap.js")
@@ -236,6 +324,19 @@ def on_webview_will_set_content(web_content: WebContent, context: Optional[Any])
         web_content.css.append(f"{WEB}/decklist.css")
         web_content.js.append(f"{WEB}/decklist.js")
         web_content.js.append(f"{WEB}/homedeck.js")
+        # Embed the full deck tree as JSON so homedeck.js can render the deck
+        # list with the EXACT same JS code path as the congrats page (via
+        # __adDeckList.render()). Injected regardless of the sidebar setting:
+        # the native table is hidden by CSS, so without this payload a
+        # sidebar-less home page would show no decks at all.
+        try:
+            tree_payload = _full_deck_tree_payload()
+            web_content.head += (
+                "<script>window.__baDeckTree = "
+                + _json.dumps(tree_payload) + ";</script>"
+            )
+        except Exception:
+            pass
         # Tag the deck browser's <center> so theme.css can scope the heavy
         # homepage layout to it alone — the Overview shares this stylesheet
         # and must keep its own simple layout (just palette + type).
@@ -243,7 +344,7 @@ def on_webview_will_set_content(web_content: WebContent, context: Optional[Any])
         # composition can take over from the (now-hidden) table.
         try:
             klass = "ba-home" + (
-                " ba-single" if _top_decks_count() == 1 else " ba-multi"
+                " ba-single" if _hero_mode(cfg) else " ba-multi"
             )
             web_content.body = web_content.body.replace(
                 "<center>", f'<center class="{klass}">', 1
@@ -279,20 +380,6 @@ def on_webview_will_set_content(web_content: WebContent, context: Optional[Any])
             )
         except Exception:
             pass
-        # Embed the full deck tree as JSON so homedeck.js can render the deck
-        # list with the EXACT same JS code path as the congrats page (via
-        # __adDeckList.render()). Both views feed identically-shaped data
-        # into one render function — no duplicated DOM building.
-        if isinstance(context, DeckBrowser):
-            try:
-                import json as _json
-                tree_payload = _full_deck_tree_payload()
-                web_content.head += (
-                    "<script>window.__baDeckTree = "
-                    + _json.dumps(tree_payload) + ";</script>"
-                )
-            except Exception:
-                pass
     # Floating Settings cog — only when the sidebar is OFF on the homepage.
     no_side = not cfg.get("sidebar_nav", True)
     if no_side and isinstance(context, (DeckBrowser, Overview)):
@@ -312,10 +399,12 @@ def on_webview_will_set_content(web_content: WebContent, context: Optional[Any])
             head_html = _reviewer_header_html()
         except Exception:
             head_html = ""
-        try:
-            ease_html = _reviewer_ease_html()
-        except Exception:
-            ease_html = ""
+        ease_html = ""
+        if cfg.get("reviewer_answer_buttons", "intervals") != "native":
+            try:
+                ease_html = _reviewer_ease_html()
+            except Exception:
+                ease_html = ""
         web_content.body = head_html + web_content.body + ease_html
     if _is(context, _ToolbarCtx):
         web_content.css.append(f"{WEB}/toolbar.css")
@@ -346,7 +435,7 @@ def on_webview_will_set_content(web_content: WebContent, context: Optional[Any])
         # default editor briefly, then ours, then JS reshuffling tags and
         # the gear into place — reads as a stack of flashes.
         em = getattr(context, "editorMode", None)
-        if em == EditorMode.ADD_CARDS:
+        if em == EditorMode.ADD_CARDS and cfg.get("restyle_addcard", True):
             theme_safe = theme_pref if theme_pref in ("light", "dark") else ""
             # Resolve the actual paper color once, in Python — even when
             # theme_pref is "system" — so the inline <style> can emit a
@@ -624,10 +713,11 @@ def build_heatmap_html(weeks: int = 53) -> str:
     """
 
 
-# Force the deck-browser tree to render with every node expanded — the user
-# wants the full hierarchy visible by default, not a "+/-" puzzle. We patch
+# Optionally force Anki's own deck-browser tree to render with every node
+# expanded (Settings → Deck list → "Sub-decks on startup: Expanded"). We patch
 # `_render_deck_node` (not the persisted collapsed state) so the user's saved
 # collapse flags stay intact in the backend; we just ignore them in this view.
+# The default ("Remember") leaves Anki's persisted state alone.
 def _patch_deck_tree_always_expanded() -> None:
     try:
         if getattr(DeckBrowser, "_ad_expand_patched", False):
@@ -635,6 +725,8 @@ def _patch_deck_tree_always_expanded() -> None:
         _orig = DeckBrowser._render_deck_node
 
         def _patched(self, node, ctx):
+            if _config().get("deck_tree_startup", "remember") != "expanded":
+                return _orig(self, node, ctx)
             try:
                 # Walk and flatten any persisted collapse so all rows render.
                 # Per-call: only mutates the in-memory tree node Anki built
@@ -667,17 +759,23 @@ def on_deck_browser_will_render_content(
             heatmap = build_heatmap_html(int(cfg.get("heatmap_weeks", 53)))
         except Exception as e:
             heatmap = f"<!-- anki-design heatmap error: {e} -->"
-    # Single-deck hero replaces the table (CSS hides the table in this mode).
+    # Single-deck hero replaces the top-level row (CSS hides the table in
+    # this mode). Sub-decks of that one deck still render as a list under
+    # the hero — homedeck.js takes care of that.
     hero = ""
-    try:
-        if _top_decks_count() == 1:
+    if _hero_mode(cfg):
+        try:
             hero = _single_deck_hero()
-    except Exception:
-        pass
-    # Pulse strip (cards today · lifetime · streak) leads the practice
-    # section. Same shape in single-deck and multi-deck because it sits
-    # inside .ba-practice (which is the same in both modes).
-    pulse = _pulse_html()
+        except Exception:
+            pass
+    # Pulse strip (today panel + streak) leads the practice section. Same
+    # shape in single-deck and multi-deck because it sits inside
+    # .ba-practice (which is the same in both modes). Each half has its
+    # own toggle in Settings.
+    pulse = _pulse_html(
+        show_today=bool(cfg.get("show_today", True)),
+        show_streak=bool(cfg.get("show_streak", True)),
+    )
     practice_inner = pulse + heatmap
     practice = (
         f'<section class="ba-practice">{practice_inner}</section>'
@@ -738,9 +836,11 @@ def on_state_did_change(new_state: str, old_state: str) -> None:
     elif new_state == "overview":
         _set_bottom_visible(not hide_over)
     elif new_state == "review":
-        # We render our own ease selector inside the reviewer webview; the
-        # native bottom toolbar is just chrome we don't need.
-        _set_bottom_visible(False)
+        # We render our own ease selector inside the reviewer webview, so
+        # the native bottom toolbar is redundant — unless the user opted
+        # back into Anki's own answer buttons.
+        native_ease = cfg.get("reviewer_answer_buttons", "intervals") == "native"
+        _set_bottom_visible(native_ease)
     else:
         _set_bottom_visible(True)
     _update_title()
@@ -816,13 +916,15 @@ def _open_settings() -> None:
             import_module("." + mod, __name__).close_inline()
         except Exception:
             pass
-    try:
-        from . import settings_embed
-        settings_embed.open_inline(mw)
-        return
-    except Exception:
-        pass
-    # Fallback: standalone Preferences dialog with Anki Design tab.
+    if _embed_enabled("embed_settings"):
+        try:
+            from . import settings_embed
+            settings_embed.open_inline(mw)
+            return
+        except Exception:
+            pass
+    # Standalone Preferences dialog with the Anki Design tab selected — the
+    # fallback path, and the normal path when inline settings are off.
     try:
         from .settings import open_settings
         open_settings(mw)
@@ -843,6 +945,8 @@ def _on_js_message(handled, message, context):
     # normally lands on the intermediate Overview page. Skip that and go
     # straight into studying — same target as the single-deck hero.
     if message.startswith("open:") and isinstance(context, DeckBrowser):
+        if not _config().get("skip_overview", True):
+            return handled  # let Anki open its overview page as usual
         tail = message.split(":", 1)[1]
         if tail.isdigit():
             try:
@@ -873,6 +977,8 @@ def _on_js_message(handled, message, context):
             # open_from_outside picks the right host: reviewer.web during
             # review, the cmdk_overlay when an embed is active (so the
             # palette floats above it), mw.web otherwise.
+            if not _config().get("cmdk", True):
+                return (True, None)
             try:
                 from . import cmdk as _cmdk
                 _cmdk.open_from_outside("")
@@ -954,47 +1060,31 @@ def _on_js_message(handled, message, context):
                 mw.moveToState("deckBrowser")
         elif cmd == "add":
             # Open AddCards inside the main window (over the deck area, to
-            # the right of the sidebar). Falls back to the standard window
-            # if the embed setup fails. Tear other embeds down first.
+            # the right of the sidebar) — or Anki's own window when the
+            # inline embed is switched off. Tear other embeds down first.
             for mod in ("browse_embed", "stats_embed", "settings_embed"):
                 try:
                     from importlib import import_module
                     import_module("." + mod, __name__).close_inline()
                 except Exception:
                     pass
-            try:
-                from . import addcard_embed
-                addcard_embed.open_inline(mw)
-            except Exception:
-                mw.onAddCard()
+            _open_add()
         elif cmd == "browse":
-            # Open the Browser embedded in the main window, mirroring the
-            # Add embed. Tear other embeds down first.
             for mod in ("addcard_embed", "stats_embed", "settings_embed"):
                 try:
                     from importlib import import_module
                     import_module("." + mod, __name__).close_inline()
                 except Exception:
                     pass
-            try:
-                from . import browse_embed
-                browse_embed.open_inline(mw)
-            except Exception:
-                mw.onBrowse()
+            _open_browse()
         elif cmd == "stats":
-            # Open Stats embedded in the main window. Tear other embeds
-            # down first.
             for mod in ("addcard_embed", "browse_embed", "settings_embed"):
                 try:
                     from importlib import import_module
                     import_module("." + mod, __name__).close_inline()
                 except Exception:
                     pass
-            try:
-                from . import stats_embed
-                stats_embed.open_inline(mw)
-            except Exception:
-                mw.onStats()
+            _open_stats()
         elif cmd == "sync":
             mw.on_sync_button_clicked()
         elif cmd == "settings":
@@ -1064,6 +1154,10 @@ def _on_js_message(handled, message, context):
                     db._rename(did)  # type: ignore[attr-defined]
                 elif action == "rename-to" and extra is not None:
                     _rename_deck_inline(did, extra)
+                elif action == "collapse":
+                    _set_deck_collapsed(did, extra)
+                elif action == "reparent" and extra is not None:
+                    _reparent_deck(did, extra)
                 elif action == "options":
                     try:
                         from aqt.deckoptions import display_options_for_deck_id
@@ -1139,6 +1233,66 @@ def _create_deck_inline(name: str) -> None:
         return
     try:
         mw.reset()
+    except Exception:
+        pass
+
+
+def _set_deck_collapsed(did: int, state: Any) -> None:
+    """Write a deck's persisted (and synced) collapse flag — exactly what
+    Anki's native "+/-" toggle stores — WITHOUT re-rendering the page. The
+    JS list has already hidden/shown the rows and tells us the resulting
+    state ("1" collapsed / "0" open), so rapid toggles can't drift: each
+    write is absolute, never a read-modify-write. The next render reads the
+    flag back from the backend, so the state survives restarts and syncs."""
+    try:
+        from anki.decks import DeckId
+        deck = mw.col.decks.get(DeckId(did))
+        if not deck:
+            return
+        s = str(state if state is not None else "").strip()
+        if s in ("1", "0"):
+            collapsed = s == "1"
+        else:  # no explicit state: plain toggle
+            collapsed = not bool(deck.get("collapsed", False))
+        try:
+            from anki.decks import DeckCollapseScope
+            from aqt.operations.deck import set_deck_collapsed
+            set_deck_collapsed(
+                parent=mw, deck_id=DeckId(did), collapsed=collapsed,
+                scope=DeckCollapseScope.REVIEWER,
+            ).run_in_background(initiator=getattr(mw, "deckBrowser", None))
+        except Exception:
+            mw.col.decks.set_collapsed(
+                DeckId(did), collapsed, 1  # 1 == DeckCollapseScope.REVIEWER
+            )
+    except Exception:
+        pass
+
+
+def _reparent_deck(did: int, target_raw: Any) -> None:
+    """Move a deck under another deck — or to the top level with target 0.
+    Drives Anki's own reparent op (the one its native drag-and-drop uses),
+    so naming, merging and undo behave exactly as they do in stock Anki."""
+    try:
+        target = int(str(target_raw).strip() or "0")
+    except Exception:
+        return
+    if target == did:
+        return
+    try:
+        from anki.decks import DeckId
+        from aqt.operations.deck import reparent_decks
+
+        def _after(_out: Any) -> None:
+            try:
+                if getattr(mw, "state", "") == "deckBrowser":
+                    mw.deckBrowser.refresh()
+            except Exception:
+                pass
+
+        reparent_decks(
+            parent=mw, deck_ids=[DeckId(did)], new_parent=DeckId(target),
+        ).success(_after).run_in_background()
     except Exception:
         pass
 
@@ -1284,7 +1438,7 @@ def _single_deck_hero() -> str:
         return ""
 
 
-def _pulse_html() -> str:
+def _pulse_html(show_today: bool = True, show_streak: bool = True) -> str:
     """Today panel (totals + hourly session-bars) and a separated streak
     element. Renders for both single-deck and multi-deck modes; sits
     inside .ba-practice so it inherits the section's width and entry
@@ -1299,6 +1453,8 @@ def _pulse_html() -> str:
     Streak: a separate flat element (no panel chrome) below the today
     panel — thematically grouped with the heatmap below, since both
     speak to long-term consistency rather than immediate effort."""
+    if not show_today and not show_streak:
+        return ""
     try:
         s = _standing()
     except Exception:
@@ -1335,14 +1491,14 @@ def _pulse_html() -> str:
         f'{fire_svg}'
         f'<span class="ba-streak-n">{streak:,}</span>'
         f'</div>'
-    )
+    ) if show_streak else ""
 
     # If there are no reviews today, omit the today panel entirely —
     # an empty card just to say "nothing yet" reads as filler, and the
     # streak + heatmap below already tell the relevant story for an
-    # un-studied day.
-    if not by_hour:
-        return f'<div class="ba-pulse">{streak_html}</div>'
+    # un-studied day. Same when the panel is switched off in Settings.
+    if not by_hour or not show_today:
+        return f'<div class="ba-pulse">{streak_html}</div>' if streak_html else ""
 
     # Build the today panel body. by_hour is guaranteed non-empty here
     # because we returned early above when it was empty.
@@ -1519,7 +1675,7 @@ def _build_standing_payload() -> Dict[str, Any]:
         "today": s.get("today", 0),
         "todayMin": _minutes_today(),
         "total": s.get("total", 0),
-        "singleDeck": _top_decks_count() == 1,
+        "singleDeck": _hero_mode(),
         "last7": _last_7_days_active(),
     }
 
@@ -1685,7 +1841,13 @@ def _install_silent_sync() -> None:
     entry points."""
     import types
 
+    orig = getattr(mw, "_sync_collection_and_media", None)
+
     def _silent(self, after_sync) -> None:
+        if not _config().get("silent_sync", True) and orig is not None:
+            # User prefers Anki's own progress dialog + "Sync complete".
+            return orig(after_sync)
+
         def on_collection_sync_finished() -> None:
             try:
                 self.col.models._clear_cache()
@@ -1807,15 +1969,23 @@ def _full_deck_tree_payload() -> list:
                 return kid_rows
             full = str(getattr(node, "name", "") or "")
             leaf = full.split("::")[-1]
+            try:
+                path = str(mw.col.decks.name(did) or full)
+            except Exception:
+                path = full
             row = {
                 "did": did,
                 "name": leaf,
+                "path": path,
                 "depth": depth,
                 "new": n,
                 "learn": l,
                 "review": r,
                 "current": did == current_did,
                 "filtered": is_filtered(did),
+                # Anki's persisted collapse flag (the one its own deck list
+                # honours and syncs). Only meaningful on parents.
+                "collapsed": bool(getattr(node, "collapsed", False)) and bool(kids),
             }
             return [row] + kid_rows
 
@@ -1870,6 +2040,7 @@ def _filtered_deck_tree(exclude_did: int) -> list:
                 "new": n,
                 "learn": l,
                 "review": r,
+                "collapsed": bool(getattr(node, "collapsed", False)) and bool(kid_rows),
             }
             return [row] + kid_rows
 
@@ -2038,9 +2209,11 @@ def on_webview_did_inject_style_into_page(webview) -> None:
         return
     if not _is_congrats_url(url):
         return
+    cfg = _config()
+    if not cfg.get("congrats_redesign", True):
+        return  # stock Anki congrats page
     try:
         import json as _json
-        cfg = _config()
         standing = _build_standing_payload()
         # Dev override: if a `?did=N` query string is present on /congrats,
         # build the payload around that deck instead of the current one.
@@ -2101,9 +2274,16 @@ def on_webview_did_inject_style_into_page(webview) -> None:
                 f"s.src='{WEB}/{f}';s.async=false;"
                 f"document.head.appendChild(s);}})();"
             )
+        try:
+            all_decks = _full_deck_tree_payload()
+        except Exception:
+            all_decks = []
         seed = (
             f"window.__baStandingData={_json.dumps(standing)};"
             f"window.__baCongratsData={_json.dumps(congrats)};"
+            # Full tree for the deck-options "Move to…" picker + flags.
+            f"window.__baDeckTree={_json.dumps(all_decks)};"
+            f"window.__baOpts={_json.dumps(_js_opts(cfg))};"
         )
         webview.eval(theme_attr + seed + accent_style + css_inject + js_inject)
     except Exception:
@@ -2388,179 +2568,151 @@ except Exception:
 gui_hooks.webview_did_receive_js_message.append(_on_js_message)
 
 
+def _embed_enabled(key: str) -> bool:
+    """Inline windows (Add / Browse / Stats / Settings) live to the right
+    of the sidebar rail, so they only make sense while the sidebar is on;
+    each also has its own Settings toggle."""
+    cfg = _config()
+    if not cfg.get("sidebar_nav", True):
+        return False
+    return bool(cfg.get(key, True))
+
+
+def _open_add(*args: Any, **kwargs: Any) -> None:
+    """Add Cards — inline embed when enabled, else Anki's own window."""
+    if _embed_enabled("embed_add") and _config().get("restyle_addcard", True):
+        try:
+            from . import addcard_embed
+            addcard_embed.open_inline(mw)
+            return
+        except Exception:
+            pass
+    orig = getattr(mw, "_ba_orig_on_add_card", None)
+    if orig is not None:
+        orig(*args, **kwargs)
+        return
+    try:
+        from aqt import dialogs
+        dialogs.open("AddCards", mw)
+    except Exception:
+        pass
+
+
+def _open_browse(*args: Any, **kwargs: Any) -> None:
+    """Browse — inline embed when enabled, else Anki's own window."""
+    if _embed_enabled("embed_browse"):
+        try:
+            from . import browse_embed
+            browse_embed.open_inline(mw)
+            return
+        except Exception:
+            pass
+    orig = getattr(mw, "_ba_orig_on_browse", None)
+    if orig is not None:
+        orig(*args, **kwargs)
+        return
+    try:
+        from aqt import dialogs
+        dialogs.open("Browser", mw)
+    except Exception:
+        pass
+
+
+def _open_stats(*args: Any, **kwargs: Any) -> None:
+    """Stats — inline embed when enabled, else Anki's own window. Shift+T
+    (legacy DeckStats) always falls through to Anki."""
+    orig = getattr(mw, "_ba_orig_on_stats", None)
+    try:
+        from aqt.utils import KeyboardModifiersPressed
+        if KeyboardModifiersPressed().shift and orig is not None:
+            orig(*args, **kwargs)
+            return
+    except Exception:
+        pass
+    if _embed_enabled("embed_stats"):
+        try:
+            from . import stats_embed
+            stats_embed.open_inline(mw)
+            return
+        except Exception:
+            pass
+    if orig is not None:
+        orig(*args, **kwargs)
+        return
+    try:
+        from aqt import dialogs
+        dialogs.open("NewDeckStats", mw)
+    except Exception:
+        pass
+
+
+def _open_prefs(*args: Any, **kwargs: Any) -> None:
+    """Preferences — always lands on the Anki Design tab; inline when the
+    settings embed is enabled."""
+    try:
+        _open_settings()
+    except Exception:
+        orig = getattr(mw, "_ba_orig_on_prefs", None)
+        if orig is not None:
+            orig(*args, **kwargs)
+
+
 # Sidebar shortcuts — make the keys hinted in the sidebar (A, D, comma) do
 # what the user expects.
 #
 # Anki binds `a`/`d`/`b`/`t`/`y`/`s` as global shortcuts in aqt/main.py.
 # We can't unbind those (they're created as QShortcut objects on `mw` at
 # startup), but we CAN intercept the functions they call. So:
-#   - A → onAddCard:  patch to open our inline embed instead of the
-#     standalone AddCards window.
-#   - D → moveToState("deckBrowser"):  patch to also tear down the embed
+#   - A / B / T → patch onAddCard / onBrowse / onStats to open our inline
+#     embeds (each checks its Settings toggle at call time and falls back
+#     to Anki's standalone window).
+#   - D → moveToState("deckBrowser"): patch to also tear down the embed
 #     if it's currently open, so the deck-browser UI actually comes back.
-#   - Plain `,` → settings:  Anki has no binding for `,` at all, so add a
+#   - Plain `,` → settings: Anki has no binding for `,` at all, so add a
 #     QShortcut for it.
 def _setup_sidebar_shortcuts() -> None:
-    # Patch onAddCard so the Tools menu, toolbar, and any code path that
-    # goes through `mw.onAddCard()` opens the inline embed instead of the
-    # standalone window.
-    try:
-        _orig_on_add_card = mw.onAddCard
+    # Patch the mw entry points so the Tools menu, toolbar, and any code
+    # path that goes through them opens the inline embed instead of the
+    # standalone window. Originals are stashed on mw so the openers can
+    # fall back to them when a toggle is off.
+    for attr, stash, fn in (
+        ("onAddCard", "_ba_orig_on_add_card", _open_add),
+        ("onBrowse", "_ba_orig_on_browse", _open_browse),
+        ("onStats", "_ba_orig_on_stats", _open_stats),
+        ("onPrefs", "_ba_orig_on_prefs", _open_prefs),
+    ):
+        try:
+            if getattr(mw, stash, None) is None:
+                setattr(mw, stash, getattr(mw, attr))
+            setattr(mw, attr, fn)
+        except Exception:
+            pass
 
-        def _patched_on_add_card(*args, **kwargs):
-            try:
-                from . import addcard_embed
-                addcard_embed.open_inline(mw)
-            except Exception:
-                _orig_on_add_card(*args, **kwargs)
-
-        mw.onAddCard = _patched_on_add_card  # type: ignore[assignment]
-    except Exception:
-        pass
-
-    # The "A" global shortcut is bound by aqt/main.py:setupKeys via
+    # The global shortcuts are bound by aqt/main.py:setupKeys via
     # `("a", self.onAddCard)` — a bound-method reference captured BEFORE
-    # we monkey-patch `mw.onAddCard`. The QShortcut holds the original
-    # bound method, so the monkey-patch above doesn't catch it. Find the
-    # QShortcut child of mw whose key is "A", disconnect its existing
-    # activation, and reconnect to our embed opener.
+    # we monkey-patch. The QShortcut holds the original bound method, so
+    # the patch above doesn't catch it. Find the QShortcut children whose
+    # keys match, disconnect the existing activation, and reconnect to
+    # our openers.
     try:
         from aqt.qt import QShortcut, QKeySequence
-        target_seq = QKeySequence("a")
-
-        def _open_inline_a() -> None:
-            try:
-                from . import addcard_embed
-                addcard_embed.open_inline(mw)
-            except Exception:
-                try:
-                    from aqt import dialogs
-                    dialogs.open("AddCards", mw)
-                except Exception:
-                    pass
-
+        targets = {
+            QKeySequence("a").toString(): _open_add,
+            QKeySequence("b").toString(): _open_browse,
+            QKeySequence("t").toString(): _open_stats,
+        }
         for sc in mw.findChildren(QShortcut):
             try:
-                if sc.key().toString() == target_seq.toString():
-                    try:
-                        sc.activated.disconnect()
-                    except Exception:
-                        pass
-                    sc.activated.connect(_open_inline_a)
-            except Exception:
-                continue
-    except Exception:
-        pass
-
-    # Same dance for Browse (B key + mw.onBrowse).
-    try:
-        _orig_on_browse = mw.onBrowse
-
-        def _patched_on_browse(*args, **kwargs):
-            try:
-                from . import browse_embed
-                browse_embed.open_inline(mw)
-            except Exception:
-                _orig_on_browse(*args, **kwargs)
-
-        mw.onBrowse = _patched_on_browse  # type: ignore[assignment]
-    except Exception:
-        pass
-
-    try:
-        from aqt.qt import QShortcut, QKeySequence
-        target_seq_b = QKeySequence("b")
-
-        def _open_inline_b() -> None:
-            try:
-                from . import browse_embed
-                browse_embed.open_inline(mw)
-            except Exception:
+                fn = targets.get(sc.key().toString())
+                if fn is None:
+                    continue
                 try:
-                    from aqt import dialogs
-                    dialogs.open("Browser", mw)
+                    sc.activated.disconnect()
                 except Exception:
                     pass
-
-        for sc in mw.findChildren(QShortcut):
-            try:
-                if sc.key().toString() == target_seq_b.toString():
-                    try:
-                        sc.activated.disconnect()
-                    except Exception:
-                        pass
-                    sc.activated.connect(_open_inline_b)
+                sc.activated.connect(fn)
             except Exception:
                 continue
-    except Exception:
-        pass
-
-    # Same dance for Stats (T key + mw.onStats). Shift+T (legacy
-    # DeckStats) is left alone — it falls through to the standalone
-    # window; only the modern NewDeckStats gets embedded.
-    try:
-        _orig_on_stats = mw.onStats
-
-        def _patched_on_stats(*args, **kwargs):
-            try:
-                from aqt.utils import KeyboardModifiersPressed
-                want_old = KeyboardModifiersPressed().shift
-                if want_old:
-                    _orig_on_stats(*args, **kwargs)
-                    return
-            except Exception:
-                pass
-            try:
-                from . import stats_embed
-                stats_embed.open_inline(mw)
-            except Exception:
-                _orig_on_stats(*args, **kwargs)
-
-        mw.onStats = _patched_on_stats  # type: ignore[assignment]
-    except Exception:
-        pass
-
-    try:
-        from aqt.qt import QShortcut, QKeySequence
-        target_seq_t = QKeySequence("t")
-
-        def _open_inline_t() -> None:
-            try:
-                from . import stats_embed
-                stats_embed.open_inline(mw)
-            except Exception:
-                try:
-                    from aqt import dialogs
-                    dialogs.open("NewDeckStats", mw)
-                except Exception:
-                    pass
-
-        for sc in mw.findChildren(QShortcut):
-            try:
-                if sc.key().toString() == target_seq_t.toString():
-                    try:
-                        sc.activated.disconnect()
-                    except Exception:
-                        pass
-                    sc.activated.connect(_open_inline_t)
-            except Exception:
-                continue
-    except Exception:
-        pass
-
-    # Same dance for Preferences: patch mw.onPrefs so the Tools menu
-    # entry (and any code path that goes through mw.onPrefs()) opens
-    # the inline embed instead of the standalone window.
-    try:
-        _orig_on_prefs = mw.onPrefs
-
-        def _patched_on_prefs(*args, **kwargs):
-            try:
-                _open_settings()
-            except Exception:
-                _orig_on_prefs(*args, **kwargs)
-
-        mw.onPrefs = _patched_on_prefs  # type: ignore[assignment]
     except Exception:
         pass
 
@@ -2601,6 +2753,8 @@ def _setup_sidebar_shortcuts() -> None:
     # Browser table, a dialog) the webview never sees the keydown. Bind a
     # Qt-level shortcut on mw so the palette is reachable from anywhere.
     def _open_cmdk_palette() -> None:
+        if not _config().get("cmdk", True):
+            return
         try:
             from . import cmdk as _cmdk
             _cmdk.open_from_outside("")
@@ -3970,10 +4124,19 @@ def _dev_cmd_watch() -> None:
                     _dev_cmd_seen_mtime["v"] = mtime
                     try:
                         with open(cmd_file, "r") as fh:
-                            data = fh.read()
+                            whole = fh.read()
                     except Exception as e:
                         _dev_cmd_log(f"read err: {e!r}")
-                        data = ""
+                        whole = ""
+                    # Appended (`echo cmd >> .context/cmd`): dispatch only
+                    # the delta. Rewritten (`echo cmd > .context/cmd`, or the
+                    # same line written again): dispatch the whole file.
+                    prev = _dev_cmd_seen_text["v"]
+                    if prev and whole.startswith(prev) and len(whole) > len(prev):
+                        data = whole[len(prev):]
+                    else:
+                        data = whole
+                    _dev_cmd_seen_text["v"] = whole
                     for line in data.splitlines():
                         if line.strip():
                             _dev_cmd_log(f"cmd: {line!r}")
@@ -3990,6 +4153,7 @@ def _dev_cmd_watch() -> None:
 
 
 _dev_cmd_started = {"v": False}
+_dev_cmd_seen_text = {"v": ""}
 
 
 def _dev_cmd_start() -> None:
@@ -4004,6 +4168,8 @@ def _dev_cmd_start() -> None:
         stale = os.path.join(ADDON_SRC, ".context", "cmd")
         if os.path.exists(stale):
             _dev_cmd_seen_mtime["v"] = os.path.getmtime(stale)
+            with open(stale, "r") as fh:
+                _dev_cmd_seen_text["v"] = fh.read()
     except Exception:
         pass
     t = threading.Thread(

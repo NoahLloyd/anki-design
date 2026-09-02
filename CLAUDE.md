@@ -16,8 +16,9 @@ The pipeline runs entirely on the running Anki's Qt main thread:
   it up and calls `QWidget.grab()` on the matching top-level widget. `grab()`
   renders the widget tree through Qt's backing store — it does **not** raise,
   activate, or repaint visibly. The user sees nothing.
-- `.context/cmd` is a one-line command file the watcher tails. Append to it
-  with `echo "<cmd>" >> .context/cmd` to drive state. Supported commands
+- `.context/cmd` is a command file the watcher tails. Append to it with
+  `echo "<cmd>" >> .context/cmd` to drive state — only lines appended since
+  the last read run (overwriting with `>` also works). Supported commands
   (see `_dev_run_cmd` in `__init__.py`):
   - `decks` — back to deck browser
   - `overview:<deckId>` — open a deck's overview
@@ -31,6 +32,13 @@ The pipeline runs entirely on the running Anki's Qt main thread:
   - `create_test:<name>` — create a deck inline via `_create_deck_inline`
     (lets you exercise the sidebar's create path without UI input)
   - `state_info` — log current state to the cmd log (useful before grabbing)
+  - `pyeval:<code>` / `pyfile:<path>` — exec Python on the Qt main thread
+    with `mw` and the add-on's globals in scope; assign `result` to log it
+    (`.context/addon.log`). `mwecb:<js>` evals in `mw.web` and writes the
+    return value to `.context/eval_result.txt`.
+  - Gotcha: `mw.deckBrowser` only refreshes after an op when the window is
+    focused, so after `reparent`/`rename` ops in a background instance call
+    `mw.deckBrowser.refresh()` yourself before reading the DOM.
 - `scripts/dump.sh <out.html> <title>` does the same for HTML — dumps the
   matching window's `QWebEngineView` DOM to a file. Use this when you need to
   inspect computed styles or selectors instead of pixels.

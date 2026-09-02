@@ -3,7 +3,10 @@
 A from-scratch Anki UI redesign add-on. One cohesive thing you control,
 replacing Onigiri + a separate progress bar + a separate heatmap.
 
-Home: <https://anki.design>
+Home: <https://anki.design> · AnkiWeb: <https://ankiweb.net/shared/info/1809063985>
+
+**Requires Anki 25.09 or newer** (`min_point_version: 250900`). Older
+versions refuse to install it rather than half-working.
 
 ## How it works
 
@@ -28,10 +31,32 @@ No network calls, no bundled binaries — keeps AnkiWeb review trivial.
 | `web/heatmap.css` / `.js` | heatmap styling; scroll-to-newest + tooltip |
 | `web/toolbar.css` | top toolbar redesign (flat full-width header) |
 | `web/reviewer.css` / `.js` | progress bar |
-| `config.json` / `config.md` | user-facing settings + their help text |
+| `config.json` / `config.md` | user-facing settings + their help text (every feature has a switch) |
+| `colors.py` | hex helpers shared by the web injection and the Qt palettes |
 | `manifest.json` | name, version, `conflicts` with rival add-ons |
 | `build.py` / `Makefile` | produce `dist/anki-design.ankiaddon` |
 | `web/logo.css` / `web/fonts/` | the "anki.DESIGN" wordmark lockup |
+
+## Settings
+
+Everything opinionated can be switched off from **Tools → Anki Design
+Settings…** (or the sidebar's Settings row); defaults are the current
+behaviour. Highlights:
+
+- **Deck list** — sub-decks on startup (Remember / Expanded / Collapsed;
+  Remember uses Anki's own synced collapse flag), drag-to-move, the
+  single-deck hero, click-to-study vs. Anki's overview page.
+- **Reviewer** — card width / font size, *Style card content* (off keeps
+  your note type's CSS untouched), interval chips vs. Anki's answer
+  buttons, click-to-reveal, press feedback, in-place editing, progress bar.
+- **Windows** — command palette, inline Add / Browse / Stats / Preferences,
+  the redesigned Add window, the finished-deck page, quiet sync.
+- **Appearance** — theme, accent, background (Paper / White / custom and
+  Ink / Black / custom), density, fonts.
+
+Moving decks: drag a row onto another deck to nest it, drop it on the
+top-level zone to un-nest it, or use **Move to…** in the deck's gear menu.
+See `config.md` for the raw keys.
 
 ## Dev loop
 
@@ -150,7 +175,6 @@ MIT — see `LICENSE`.
 
 ## Roadmap
 
-- Tune deck-list selectors for Anki 25.09's DOM (current low-contrast rows).
-- Theme the Qt chrome (menus, dialogs, sidebar) via Qt stylesheets.
-- Stats / Browse / Add windows.
+- Theme the remaining Qt chrome (menus, native dialogs) via Qt stylesheets.
 - Interactive heatmap (click a day to see that day's reviews).
+- Support for Anki versions before 25.09.

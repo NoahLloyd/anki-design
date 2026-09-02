@@ -47,6 +47,11 @@ from aqt.qt import (
 HERE = os.path.dirname(os.path.abspath(__file__))
 WEB_DIR = os.path.join(HERE, "web")
 
+try:
+    from . import colors as _colors
+except Exception:  # pragma: no cover — standalone import during tooling
+    _colors = None
+
 
 def _icon_url(name: str) -> str:
     """Plain absolute path to an icon in our web/ folder, slash-normalised
@@ -107,15 +112,22 @@ def _resolve_palette() -> Tuple[Dict[str, str], bool]:
     cfg = mw.addonManager.getConfig(ADDON) or {}
     pref = cfg.get("theme", "system")
     if pref == "dark":
-        return PAL_DARK, True
-    if pref == "light":
-        return PAL_LIGHT, False
+        is_dark = True
+    elif pref == "light":
+        is_dark = False
+    else:
+        try:
+            c = QApplication.palette().color(QPalette.ColorRole.Window)
+            is_dark = (c.red() + c.green() + c.blue()) < 384
+        except Exception:
+            is_dark = True
+    pal = PAL_DARK if is_dark else PAL_LIGHT
     try:
-        c = QApplication.palette().color(QPalette.ColorRole.Window)
-        is_dark = (c.red() + c.green() + c.blue()) < 384
-        return (PAL_DARK if is_dark else PAL_LIGHT), is_dark
+        from . import colors as _colors
+        pal = _colors.apply_background(pal, cfg, is_dark)
     except Exception:
-        return PAL_DARK, True
+        pass
+    return pal, is_dark
 
 
 # Lead with fonts Qt reliably resolves. macOS-bundled "Iowan Old Style"
@@ -736,6 +748,44 @@ def _field_row(label_text: str, widget: QWidget,
 # --------------------------------------------------------------------------- #
 # Tab page
 # --------------------------------------------------------------------------- #
+def _config_defaults() -> Dict[str, Any]:
+    """The shipped config.json — single source of truth for defaults."""
+    try:
+        d = mw.addonManager.addonConfigDefaults(ADDON)
+        if isinstance(d, dict) and d:
+            return dict(d)
+    except Exception:
+        pass
+    try:
+        import json
+        with open(os.path.join(HERE, "config.json")) as fh:
+            return dict(json.load(fh))
+    except Exception:
+        return {}
+
+
+def _refresh_views() -> None:
+    """Re-render whatever is on screen so a changed setting shows up at
+    once, and re-assert the chrome (top toolbar / bottom strip) which is
+    driven by the same config."""
+    try:
+        state = getattr(mw, "state", "")
+        if state == "deckBrowser":
+            mw.deckBrowser.refresh()
+        elif state == "overview":
+            mw.overview.refresh()
+    except Exception:
+        pass
+    try:
+        from importlib import import_module
+        pkg = import_module(ADDON)
+        state = getattr(mw, "state", "")
+        if state in ("deckBrowser", "overview", "review"):
+            pkg.on_state_did_change(state, state)
+    except Exception:
+        pass
+
+
 class AnkiDesignSettingsPage(QWidget):
     """The Anki Design settings UI, packaged as a tab for Anki's Preferences."""
 
@@ -761,14 +811,7 @@ class AnkiDesignSettingsPage(QWidget):
             mw.addonManager.writeConfig(ADDON, self._cfg)
         except Exception:
             pass
-        try:
-            state = getattr(mw, "state", "")
-            if state == "deckBrowser":
-                mw.deckBrowser.refresh()
-            elif state == "overview":
-                mw.overview.refresh()
-        except Exception:
-            pass
+        _refresh_views()
 
     # ----- styling ----- #
     def _apply_styles(self) -> None:
@@ -831,7 +874,10 @@ class AnkiDesignSettingsPage(QWidget):
         header = QLabel("Settings")
         header.setProperty("role", "page-title")
         v.addWidget(header)
-        intro = QLabel("Changes apply immediately.")
+        intro = QLabel(
+            "Most changes apply immediately. Reviewer changes take effect "
+            "from the next study session."
+        )
         intro.setProperty("role", "intro")
         intro.setWordWrap(True)
         v.addWidget(intro)
@@ -893,13 +939,18 @@ class AnkiDesignSettingsPage(QWidget):
             "Compact fits more on screen; Comfortable gives each row more air.",
         ))
 
-        # ----- Features ----- #
-        # Order matters here: the two "Hide bottom strip" toggles sit at the
-        # end as a deliberate pair (deck list / deck overview). They share
-        # a visual subgroup so the eye doesn't read them as four separate
-        # unrelated toggles.
-        v.addWidget(_section_block(self._palette, "Features"))
-        v.addSpacing(2)
+        # Backgrounds — a preset pair per theme plus a custom swatch. Blank
+        # config = the theme's own paper; a hex = override.
+        v.addWidget(self._bg_row(
+            "background_light", "Background (light)",
+            [("", "Paper"), ("#ffffff", "White")], "#f3f3f3",
+            "Page colour in light mode. Paper is the default warm tone.",
+        ))
+        v.addWidget(self._bg_row(
+            "background_dark", "Background (dark)",
+            [("", "Ink"), ("#000000", "Black")], "#15161a",
+            "Page colour in dark mode.",
+        ))
 
         def feature_row(key: str, label: str, default: bool, hint: str) -> QWidget:
             cb = QCheckBox(label)
@@ -919,27 +970,59 @@ class AnkiDesignSettingsPage(QWidget):
             row.addWidget(h)
             return wrap
 
+        # ----- Home page ----- #
+        v.addWidget(_section_block(self._palette, "Home page"))
+        v.addSpacing(2)
         v.addWidget(feature_row(
             "sidebar_nav", "Left sidebar navigation", True,
-            "Replaces Anki's top toolbar with the Anki Design rail.",
+            "Replaces Anki's top toolbar with the Anki Design rail. The "
+            "inline windows below need it.",
         ))
         v.addWidget(feature_row(
-            "show_streak", "Show streak counter", True,
-            "Flame + day count above the heatmap and in the sidebar.",
+            "show_today", "Today panel", True,
+            "Cards and minutes studied today, with a per-hour histogram.",
         ))
         v.addWidget(feature_row(
-            "show_progress", "Reviewer progress bar", True,
-            "Thin progress strip across the top of the reviewer.",
+            "show_streak", "Streak counter", True,
+            "Flame + day count above the heatmap.",
         ))
         v.addWidget(feature_row(
             "hide_bottom_on_decks",
-            "Hide bottom strip on the deck list", True,
-            "Those actions move inline into the homepage.",
+            "Hide Anki's bottom strip on the deck list", True,
+            "Those actions live in the sidebar and the deck menus instead.",
         ))
         v.addWidget(feature_row(
             "hide_bottom_on_overview",
-            "Hide bottom strip on the deck overview", True,
+            "Hide Anki's bottom strip on the deck overview", True,
             "Removes the Options / Custom Study / Description row.",
+        ))
+
+        # ----- Deck list ----- #
+        v.addWidget(_section_block(self._palette, "Deck list"))
+        v.addWidget(self._radio_row(
+            "deck_tree_startup", "remember",
+            [("remember", "Remember"),
+             ("expanded", "Expanded"),
+             ("collapsed", "Collapsed")],
+            "Sub-decks on startup",
+            "Remember keeps each deck's own open/closed state, synced like "
+            "Anki does. Expanded or Collapsed start every launch the same "
+            "way.",
+        ))
+        v.addSpacing(2)
+        v.addWidget(feature_row(
+            "deck_drag_move", "Drag decks to move them", True,
+            "Drop a deck onto another to nest it, or onto the top-level "
+            "zone to un-nest it. “Move to…” in the deck menu does the same.",
+        ))
+        v.addWidget(feature_row(
+            "single_deck_hero", "Single-deck hero", True,
+            "With one top-level deck, show it as a big card with its "
+            "sub-decks listed beneath.",
+        ))
+        v.addWidget(feature_row(
+            "skip_overview", "Click a deck to start studying", True,
+            "Off: clicking a deck opens Anki's overview page first.",
         ))
 
         # ----- Reviewer ----- #
@@ -963,6 +1046,78 @@ class AnkiDesignSettingsPage(QWidget):
              ("x-large", "XL")],
             "Font size",
             "Base size used to render the card front and back.",
+        ))
+
+        v.addWidget(self._radio_row(
+            "reviewer_answer_buttons", "intervals",
+            [("intervals", "Interval chips"),
+             ("native", "Anki's buttons")],
+            "Answer buttons",
+            "Interval chips show just the next interval under the answer. "
+            "Anki's buttons restore the labelled Again / Hard / Good / Easy "
+            "bar.",
+        ))
+        v.addSpacing(2)
+        v.addWidget(feature_row(
+            "reviewer_card_styling", "Style card content", True,
+            "Apply Anki Design typography and colours to the card itself. "
+            "Off keeps your note type's own styling; the header and answer "
+            "keys stay.",
+        ))
+        v.addWidget(feature_row(
+            "show_progress", "Progress bar", True,
+            "Thin progress strip across the top of the reviewer.",
+        ))
+        v.addWidget(feature_row(
+            "click_to_reveal", "Click the card to show the answer", True,
+            "Anywhere on the card works like Space.",
+        ))
+        v.addWidget(feature_row(
+            "press_feedback", "Press feedback", True,
+            "A soft bloom from the key you graded with.",
+        ))
+        v.addWidget(feature_row(
+            "inline_edit", "Edit cards in place", True,
+            "E edits the fields right on the card. Off opens Anki's edit "
+            "window.",
+        ))
+
+        # ----- Windows ----- #
+        v.addWidget(_section_block(self._palette, "Windows"))
+        v.addSpacing(2)
+        v.addWidget(feature_row(
+            "cmdk", "Command palette (⌘K / Ctrl+K)", True,
+            "Search decks, cards, tags and actions from anywhere.",
+        ))
+        v.addWidget(feature_row(
+            "embed_add", "Add cards inside the main window", True,
+            "Off opens Anki's separate Add window.",
+        ))
+        v.addWidget(feature_row(
+            "embed_browse", "Browse inside the main window", True,
+            "Off opens Anki's separate Browse window.",
+        ))
+        v.addWidget(feature_row(
+            "embed_stats", "Stats inside the main window", True,
+            "Off opens Anki's separate Stats window.",
+        ))
+        v.addWidget(feature_row(
+            "embed_settings", "Preferences inside the main window", True,
+            "Off opens Anki's Preferences dialog.",
+        ))
+        v.addWidget(feature_row(
+            "restyle_addcard", "Redesigned Add window", True,
+            "The editorial Add card layout. Off restores Anki's stock Add "
+            "window (and opens it as a separate window).",
+        ))
+        v.addWidget(feature_row(
+            "congrats_redesign", "Redesigned finished-deck page", True,
+            "Session summary and a Keep going list when a deck is done.",
+        ))
+        v.addWidget(feature_row(
+            "silent_sync", "Quiet sync", True,
+            "Progress shows in the sidebar instead of a dialog. Off restores "
+            "Anki's sync progress window.",
         ))
 
         # ----- Heatmap ----- #
@@ -1200,6 +1355,57 @@ class AnkiDesignSettingsPage(QWidget):
         h.addStretch(1)
         return _field_row(label, box, hint)
 
+    def _bg_row(self, key: str, label: str,
+                presets: List[Tuple[str, str]], custom_default: str,
+                hint: Optional[str] = None) -> QWidget:
+        """Preset radios + a Custom radio with a colour swatch. Config value
+        is "" for the theme default or a hex colour."""
+        group = QButtonGroup(self)
+        self._radio_groups.append(group)
+        box = QWidget()
+        h = QHBoxLayout(box)
+        h.setContentsMargins(0, 0, 0, 0)
+        h.setSpacing(14)
+        raw = self._g(key, "")
+        current = (_colors.hex_ok(raw) if _colors else str(raw or "")) or ""
+        preset_values = [p[0] for p in presets]
+        is_custom = current not in preset_values
+
+        def _choose(value: str) -> None:
+            self._set(key, value)
+            self._palette, _ = _resolve_palette()
+            self._apply_styles()
+
+        for value, opt_label in presets:
+            rb = QRadioButton(opt_label)
+            rb.setChecked(current == value)
+            group.addButton(rb)
+            rb.toggled.connect(
+                lambda checked, val=value: checked and _choose(val)
+            )
+            h.addWidget(rb)
+
+        custom_rb = QRadioButton("Custom")
+        custom_rb.setChecked(is_custom)
+        group.addButton(custom_rb)
+        h.addWidget(custom_rb)
+
+        swatch = ColorSwatch(
+            current if is_custom else custom_default,
+            lambda c: (custom_rb.setChecked(True), _choose(c)),
+        )
+        swatch.setVisible(is_custom)
+        h.addWidget(swatch, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        def _custom_toggled(checked: bool) -> None:
+            swatch.setVisible(bool(checked))
+            if checked:
+                _choose(swatch.value())
+
+        custom_rb.toggled.connect(_custom_toggled)
+        h.addStretch(1)
+        return _field_row(label, box, hint)
+
     def _font_wrap(self, picker: "FontPicker") -> QWidget:
         """A FontPicker + a quiet italic "optional" to its right; the tag
         hides as soon as the user picks (or types) a real value. Once
@@ -1236,23 +1442,7 @@ class AnkiDesignSettingsPage(QWidget):
         self._apply_styles()
 
     def _restore_defaults(self) -> None:
-        defaults = {
-            "theme": "system",
-            "accent": "#6c8cff",
-            "density": "comfortable",
-            "sidebar_nav": True,
-            "show_heatmap": True,
-            "show_progress": True,
-            "show_streak": True,
-            "hide_bottom_on_decks": True,
-            "hide_bottom_on_overview": True,
-            "heatmap_weeks": 53,
-            "heatmap_palette": "accent",
-            "reviewer_card_width": "medium",
-            "reviewer_font_size": "medium",
-            "font_serif": "",
-            "font_sans": "",
-        }
+        defaults = _config_defaults()
         self._cfg = defaults
         try:
             mw.addonManager.writeConfig(ADDON, defaults)

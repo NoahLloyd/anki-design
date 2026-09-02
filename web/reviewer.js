@@ -3,6 +3,12 @@
 // field spans (wrapped server-side with data-ba-field) become
 // contenteditable in place, with a small floating toolbar at the bottom.
 (function () {
+  // Settings toggles handed over by Python (window.__baOpts.reviewer). A
+  // missing key means "on" so older payloads keep working.
+  function rvOpts() {
+    return (window.__baOpts && window.__baOpts.reviewer) || {};
+  }
+
   function cleanupBody() {
     if (!document.body) return;
     // Anki injects `background-position-y: -44px` inline — kill it so
@@ -112,6 +118,7 @@
   // the question state triggers the same shortcut as Space. Avoid hijacking
   // clicks on actual links, inputs, or media inside the card body.
   function clickToReveal() {
+    if (rvOpts().clickToReveal === false) return;
     var qa = document.getElementById("qa");
     if (!qa) return;
     qa.addEventListener("click", function (e) {
@@ -152,6 +159,7 @@
   //      web.eval. The pre-roundtrip click path may have already fired —
   //      the lock below makes the eval call a no-op in that case.
   window.__baEaseFx = function (ease) {
+    if (rvOpts().pressFeedback === false) return;
     var n = parseInt(ease, 10);
     if (!(n >= 1 && n <= 4)) return;
     if (window.__baEaseFxLock) return;

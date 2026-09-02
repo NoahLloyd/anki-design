@@ -326,7 +326,10 @@
       // mw.web would render the palette behind the embed.
       send("cmdk-open");
     });
-    aside.appendChild(cmdk);
+    // Settings → Windows → "Command palette" off: no pill, no hotkey hint.
+    if (!(window.__baOpts && window.__baOpts.cmdk === false)) {
+      aside.appendChild(cmdk);
+    }
 
     // Primary nav
     var nav = document.createElement("nav");

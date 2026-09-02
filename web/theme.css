@@ -209,6 +209,18 @@ body::before {
 }
 .ba-home.ba-single .ba-deck-head { margin-bottom: 6px; }
 .ba-home.ba-single .ba-hero { margin-bottom: 28px; }
+/* The one deck's sub-decks, listed right under the hero (homedeck.js).
+   Left-aligned like the multi-deck list; the practice section follows. */
+.ba-home.ba-single > .ad-list-wrap {
+  order: 0;
+  width: 100%;
+  max-width: var(--rf-measure);
+  margin: -6px auto 0;
+  text-align: left;
+  animation: ba-rise 0.55s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: 0.1s;
+}
+.ba-home.ba-single > .ad-list-wrap .ad-list--home { margin: 0 auto; }
 .ba-home > br { display: none; }
 .ba-home > * {
   width: 100%;
