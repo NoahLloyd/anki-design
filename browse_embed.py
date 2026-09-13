@@ -11,7 +11,9 @@ tab next to the sidebar instead of opening as a separate QMainWindow:
     placed on top of `mw.form.centralwidget`, offset by the sidebar width
     so the sidebar rendered inside `mw.web` stays visible to the left.
   - The Browser window itself stays hidden (its widgets remain alive, so
-    all menubar actions, shortcuts, and add-on hooks continue to work).
+    all menubar actions and add-on hooks continue to work). Its keyboard
+    shortcuts don't survive that on their own — they resolve against the
+    active window — so `_adopt_shortcuts` re-homes them onto the overlay.
   - The overlay resizes with the main window via an installed event
     filter.
   - We register our instance with `aqt.dialogs` so any other code path
@@ -29,6 +31,7 @@ from typing import Any
 
 from aqt import mw
 from aqt.qt import (
+    QAction,
     QApplication,
     QColor,
     QDockWidget,
@@ -156,6 +159,115 @@ def _palette_styles() -> str:
     )
 
 
+# `actionClose` routes through Browser._handle_close(), which closes
+# QApplication.activeWindow() — while we are embedded that window is the
+# *main* window, so adopting Ctrl+W would quit Anki. Never re-home it.
+SKIP_ACTIONS = {"actionClose"}
+
+
+def _seq_text(seq: "QKeySequence") -> str:
+    """Canonical text for a key sequence, for comparing bindings that came
+    from different places (Anki's .ui files vs. our own QKeySequence())."""
+    return seq.toString(QKeySequence.SequenceFormat.PortableText)
+
+
+def _owned_by(obj: Any, root: Any) -> bool:
+    """True if `obj` sits anywhere under `root` in the QObject tree."""
+    p = obj
+    while p is not None:
+        if p is root:
+            return True
+        try:
+            p = p.parent()
+        except Exception:
+            return False
+    return False
+
+
+def _adopt_shortcuts(br: Any, overlay: QFrame) -> None:
+    """Make the Browser's keyboard shortcuts fire while it is embedded.
+
+    Every Browser binding lives on the Browser QMainWindow — its menu
+    QActions are parented to it, as are the handful of loose QShortcuts —
+    and all of them use Qt's WindowShortcut context, which only matches
+    when that window is the *active* one. Ours is hidden, so Ctrl+J,
+    Ctrl+D, Ctrl+Shift+G and friends silently did nothing while the
+    embed was up. Re-home them onto the overlay, which is a child of the
+    main window and therefore in the active window's widget tree.
+
+    Qt drops *both* bindings when two live shortcuts share a sequence
+    ("Ambiguous shortcut overload"), and the main window carries a dozen
+    of the same ones (Ctrl+Z, Ctrl+E, Ctrl+P, Ctrl+0, F1 …). So every
+    sequence we adopt is first unbound on the main-window side and
+    restored by `close_inline()`: while the Browser is on screen its own
+    meaning wins, exactly as it does in Anki's standalone window.
+    """
+    actions: list = []
+    loose: list = []
+    keys: set = set()
+
+    for a in br.findChildren(QAction):
+        if a.objectName() in SKIP_ACTIONS:
+            continue
+        seqs = [s for s in a.shortcuts() if not s.isEmpty()]
+        if not seqs:
+            continue
+        actions.append(a)
+        keys.update(_seq_text(s) for s in seqs)
+
+    for sc in br.findChildren(QShortcut):
+        # Only the Browser's own loose shortcuts (Shift+Home/End, the
+        # Ctrl+Shift+P preview). Anything deeper belongs to a child widget
+        # that came along with the reparent and already works.
+        if sc.parent() is not br:
+            continue
+        seq = sc.key()
+        if seq.isEmpty():
+            continue
+        loose.append(sc)
+        keys.add(_seq_text(seq))
+
+    # Stand the main window's colliding bindings down for the duration.
+    stash: list = []
+    for a in mw.findChildren(QAction):
+        if _owned_by(a, br) or _owned_by(a, overlay):
+            continue
+        seqs = [s for s in a.shortcuts() if not s.isEmpty()]
+        if seqs and any(_seq_text(s) in keys for s in seqs):
+            stash.append((a, seqs))
+            a.setShortcuts([])
+    for sc in mw.findChildren(QShortcut):
+        if _owned_by(sc, br) or _owned_by(sc, overlay):
+            continue
+        if not sc.isEnabled() or sc.key().isEmpty():
+            continue
+        if _seq_text(sc.key()) in keys:
+            stash.append((sc, None))
+            sc.setEnabled(False)
+    _state["shortcut_stash"] = stash
+
+    for a in actions:
+        a.setShortcutContext(Qt.ShortcutContext.WindowShortcut)
+        overlay.addAction(a)
+    for sc in loose:
+        sc.setParent(overlay)
+        sc.setContext(Qt.ShortcutContext.WindowShortcut)
+
+
+def _release_shortcuts() -> None:
+    """Give the main window back the bindings `_adopt_shortcuts()` took.
+    The Browser's own actions need no undoing — they are removed from the
+    widget action list when the overlay is destroyed."""
+    for obj, seqs in _state.pop("shortcut_stash", None) or []:
+        try:
+            if seqs is None:
+                obj.setEnabled(True)
+            else:
+                obj.setShortcuts(seqs)
+        except Exception:
+            pass
+
+
 class _EmbedFilter(QObject):
     """Re-positions the embed overlay whenever the main window is resized.
     Also re-applies the sidebar clamp so QSplitter's proportional resize
@@ -208,6 +320,9 @@ def close_inline() -> None:
     flt = _state.get("filter")
     if overlay is None and br is None and flt is None:
         return
+
+    # Hand the main window back any shortcut we shadowed while embedded.
+    _release_shortcuts()
 
     # Clear state FIRST so anything that re-enters via a close callback
     # returns immediately.
@@ -514,6 +629,14 @@ def open_inline(parent_mw: Any = None) -> None:
             esc.setAutoRepeat(False)
             esc.setContext(Qt.ShortcutContext.WindowShortcut)
             esc.activated.connect(close_inline)
+        except Exception:
+            pass
+
+        # Re-home the Browser's own shortcuts (Ctrl+J suspend, Ctrl+D
+        # change deck, Ctrl+Shift+G grade now, …) onto the overlay so they
+        # fire while its real window is hidden.
+        try:
+            _adopt_shortcuts(br, overlay)
         except Exception:
             pass
 

@@ -79,6 +79,9 @@
   function escClose(e) {
     if (e.key === "Escape") {
       e.preventDefault();
+      // Don't let it reach Anki's document handler (pycmd("close")) —
+      // closing the menu shouldn't also walk back to the deck list.
+      e.stopPropagation();
       close();
     }
   }
