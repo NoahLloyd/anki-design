@@ -164,6 +164,10 @@
   function onKey(e) {
     if (e.key === "Escape") {
       e.preventDefault();
+      // Keep it here: Anki's document-level handler turns a bubbling
+      // Escape into pycmd("close"), which the addon reads as "leave the
+      // current view" — closing the palette must not also leave it.
+      e.stopPropagation();
       close();
       return;
     }
@@ -370,6 +374,15 @@
   // palette renders — otherwise the embed overlay sits on top of mw.web
   // and obscures the palette.
   document.addEventListener("keydown", function (e) {
+    // Escape belongs to the palette whenever it is up, wherever the focus
+    // happens to be. Without this the key would bubble on to Anki's
+    // document handler, which the addon reads as "back to the deck list".
+    if (e.key === "Escape" && isOpen) {
+      e.preventDefault();
+      e.stopPropagation();
+      close();
+      return;
+    }
     var mod = e.metaKey || e.ctrlKey;
     if (!mod) return;
     var k = (e.key || "").toLowerCase();

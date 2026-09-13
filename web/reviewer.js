@@ -298,6 +298,9 @@
     var meta = e.metaKey || e.ctrlKey;
     if (e.key === "Escape") {
       e.preventDefault();
+      // Stop here — otherwise the same keypress also reaches Anki's
+      // document handler, which the addon reads as "back to the decks".
+      e.stopPropagation();
       exitEdit(false);
       return;
     }
@@ -452,12 +455,34 @@
     }
   }
 
+  // Escape leaves the reviewer (Python's onEsc patch turns Anki's
+  // pycmd("close") into "back to the deck list"). Typing in a
+  // type-the-answer box is the one place that would be a surprise, so
+  // there Escape keeps Anki's original meaning: drop the caret, stay put.
+  // A second press then walks back as usual.
+  function guardTypeAnswerEsc(e) {
+    if (e.key !== "Escape") return;
+    var el = document.activeElement;
+    if (!el) return;
+    var tag = (el.tagName || "").toLowerCase();
+    if (tag !== "input" && tag !== "textarea") return;
+    // Only the card's own inputs — the command palette's search box is an
+    // <input> too, and Escape there belongs to the palette.
+    var inCard = el.id === "typeans"
+      || (el.closest && el.closest("#qa") !== null);
+    if (!inCard) return;
+    e.preventDefault();
+    e.stopPropagation();
+    try { el.blur(); } catch (_) {}
+  }
+
   function boot() {
     ensureBar();
     wrapAnswer();
     clickToReveal();
     hookEaseClicks();
     watchBody();
+    document.addEventListener("keydown", guardTypeAnswerEsc, true);
   }
 
   if (document.readyState === "loading") {

@@ -46,6 +46,9 @@ Website: <a href="https://anki.design">anki.design</a><br>
 Source and issues: <a href="https://github.com/NoahLloyd/anki-design">github.com/NoahLloyd/anki-design</a><br>
 Changelog: <a href="https://github.com/NoahLloyd/anki-design/blob/main/CHANGELOG.md">CHANGELOG.md</a>
 
+<b>New in 0.3.1</b><br>
+Anki's keyboard shortcuts work inside Browse again (Ctrl+J, Ctrl+D, Ctrl+Shift+G, the flag keys and the rest). Esc goes back to the deck list from the reviewer, and closes Browse, Stats or Preferences. Ctrl+, opens the settings and Ctrl+Shift+P opens the search box, both of which had stopped working.
+
 <b>New in 0.3.0</b><br>
 Sub-decks keep their collapsed state. Drag and drop, or "Move to…", for moving decks. Sub-decks are listed under the single-deck view. Background colour options. Keep your own card styling. Anki's classic answer buttons. A switch for every feature.
 

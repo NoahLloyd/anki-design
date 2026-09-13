@@ -3,6 +3,34 @@
 All notable changes to Anki Design are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versioning is semver-ish.
 
+## [0.3.1] — 2026-09-12
+### Fixed
+- Browse: Anki's own keyboard shortcuts work again. ⌘J / Ctrl+J to
+  suspend, ⌘D to change deck, ⌘⇧G to grade, the flag keys, Home / End —
+  none of them fired. Browse runs inside the main window here, and every
+  one of those keys is attached to the Browser's own window, which stays
+  hidden. They are now attached to the embedded view instead, for as long
+  as it is open. Where a key already means something in the main window
+  (⌘Z, ⌘E, ⌘P, ⌘0, F1 …) Browse wins while it is on screen and the main
+  window gets it back on close, the same way Anki's separate Browse
+  window behaves.
+- Esc returns to the main view. The reviewer's back arrow has always
+  advertised the key and nothing was listening for it. Esc now leaves the
+  reviewer or a deck overview for the deck list, and closes an open
+  Browse, Stats or Preferences window. It is handled by the page rather
+  than as a Qt shortcut, so it works the same on Windows, macOS and
+  Linux. Esc still belongs to whatever is in front of it: a card you are
+  editing in place, the search palette, a deck's gear menu, the new-deck
+  field, or a type-the-answer box.
+- ⌘, / Ctrl+, opens Anki Design's settings again. The key was registered
+  twice, and Qt drops a shortcut that has two owners rather than pick one.
+- ⌘⇧P / Ctrl+⇧P opens the search palette again. Same double-binding, this
+  time against Anki's Switch Profile, so neither happened. Switch Profile
+  is still in the File menu.
+- The search palette no longer takes ⌘K away from Anki's own windows, so
+  Ctrl+K marks a note in Browse again. In the main window ⌘K still opens
+  the palette.
+
 ## [0.3.0] — 2026-09-02
 ### Fixed
 - Sub-decks now open the way you left them. The deck list reads Anki's own

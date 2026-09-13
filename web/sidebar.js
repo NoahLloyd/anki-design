@@ -178,6 +178,10 @@
 
     input.addEventListener("click", function (e) { e.stopPropagation(); });
     input.addEventListener("keydown", function (e) {
+      // Every key stays in the input: Anki's global letter shortcuts must
+      // not fire mid-name, and Escape must cancel the input rather than
+      // bubble on as pycmd("close") / "back to the deck list".
+      e.stopPropagation();
       if (e.key === "Enter") { e.preventDefault(); submit(); }
       else if (e.key === "Escape") { e.preventDefault(); close(); }
     });

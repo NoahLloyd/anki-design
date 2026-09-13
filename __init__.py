@@ -2749,9 +2749,15 @@ def _setup_sidebar_shortcuts() -> None:
 
     # Cmd-K / Ctrl-K — Command palette. cmdk.js already binds the hotkey
     # inside every themed webview (deck browser, overview, reviewer), but
-    # when focus is on a Qt-native widget (Add Cards embed editor field,
-    # Browser table, a dialog) the webview never sees the keydown. Bind a
-    # Qt-level shortcut on mw so the palette is reachable from anywhere.
+    # when focus is on a Qt-native widget (the Add Cards editor field, the
+    # Browser table) the webview never sees the keydown. Bind a Qt-level
+    # shortcut on mw to cover those.
+    #
+    # Window context, not application: Anki's own windows bind Ctrl+K
+    # (Browser → Mark Note) and Ctrl+Shift+P (Browser → Preview), and an
+    # app-wide binding sits on top of theirs as an ambiguous overload, so
+    # *neither* fires. Scoped to the main window, the palette keeps the
+    # keys where it lives and Anki's dialogs keep their own.
     def _open_cmdk_palette() -> None:
         if not _config().get("cmdk", True):
             return
@@ -2760,14 +2766,40 @@ def _setup_sidebar_shortcuts() -> None:
             _cmdk.open_from_outside("")
         except Exception:
             pass
+
+    def _cmdk_or_switch_profile() -> None:
+        # Ctrl+Shift+P is Anki's Switch Profile. We take the key (see
+        # below), so hand it back when the palette is switched off rather
+        # than leaving a shortcut that does nothing.
+        if _config().get("cmdk", True):
+            _open_cmdk_palette()
+            return
+        try:
+            mw.unloadProfileAndShowProfileManager()
+        except Exception:
+            pass
+
     try:
         from aqt.qt import QShortcut, QKeySequence, Qt
-        for seq in ("Ctrl+K", "Meta+K", "Ctrl+Shift+P", "Meta+Shift+P"):
+        # Anki binds Ctrl+Shift+P to File → Switch Profile. Two live
+        # bindings for one sequence is an ambiguous overload in Qt and
+        # *both* get dropped, so the palette's alias has to take the key
+        # outright. The menu item still opens the profile switcher.
+        try:
+            mw.form.actionSwitchProfile.setShortcut(QKeySequence())
+        except Exception:
+            pass
+        for seq, fn in (
+            ("Ctrl+K", _open_cmdk_palette),
+            ("Meta+K", _open_cmdk_palette),
+            ("Ctrl+Shift+P", _cmdk_or_switch_profile),
+            ("Meta+Shift+P", _cmdk_or_switch_profile),
+        ):
             try:
                 sc = QShortcut(QKeySequence(seq), mw)
                 sc.setAutoRepeat(False)
-                sc.setContext(Qt.ShortcutContext.ApplicationShortcut)
-                sc.activated.connect(_open_cmdk_palette)
+                sc.setContext(Qt.ShortcutContext.WindowShortcut)
+                sc.activated.connect(fn)
             except Exception:
                 continue
     except Exception:
@@ -2775,6 +2807,101 @@ def _setup_sidebar_shortcuts() -> None:
 
 
 gui_hooks.main_window_did_init.append(_setup_sidebar_shortcuts)
+
+# Esc — "return to the main view".
+#
+# The reviewer's back chevron has always advertised "Back to decks (Esc)"
+# and nothing bound the key. Anki turns Escape inside a webview into a
+# `close` bridge command, and `AnkiWebView.onEsc` only knows how to close
+# a *separate* window; in the main window it just drops focus. So Esc did
+# nothing at all on the surfaces this add-on introduced.
+def _esc_embed_module() -> Optional[Any]:
+    """The embed module whose overlay is currently up, if any.
+
+    `addcard_embed` is deliberately absent: its teardown calls AddCards'
+    `_close()` directly and so skips Anki's "Discard current input?"
+    question, and Esc lands there while the user is mid-note. It keeps the
+    Esc binding it has always had; making that key *more* reachable is not
+    something to do until the embed can close the way Anki does."""
+    from importlib import import_module
+    for mod in ("browse_embed", "stats_embed", "settings_embed"):
+        try:
+            m = import_module("." + mod, __name__)
+            if m._state.get("overlay") is not None:  # type: ignore[attr-defined]
+                return m
+        except Exception:
+            continue
+    return None
+
+
+def _handle_main_window_esc(web: Any) -> bool:
+    """Esc means "leave whatever I opened". True if we handled it."""
+    try:
+        if web.window() is not mw:
+            return False  # a real dialog — Esc still closes it, as usual
+    except Exception:
+        return False
+
+    # Command palette first: it sits on top of everything else.
+    try:
+        from . import cmdk_overlay as _cmdk_overlay
+        if _cmdk_overlay.is_visible():
+            w = getattr(mw, "web", None)
+            if w is not None:
+                w.eval("window.__baCmdkClose && window.__baCmdkClose();")
+            return True
+    except Exception:
+        pass
+
+    # An inline Browse / Stats / Preferences window: close it. Each embed
+    # also binds Esc as a QShortcut on its overlay, but that only fires
+    # when Qt sees the key — with focus inside one of the embed's webviews
+    # QtWebEngine can consume it first, which is why the key felt
+    # unreliable (and why it reportedly never worked on Windows). Coming
+    # through the bridge command means the page itself hands us the key,
+    # so this path works the same everywhere.
+    m = _esc_embed_module()
+    if m is not None:
+        m.close_inline()
+        return True
+
+    # Reviewing, or sitting on a deck overview: back to the deck list.
+    if getattr(mw, "state", "") in ("review", "overview"):
+        mw.moveToState("deckBrowser")
+        return True
+    return False
+
+
+def _install_esc_handler() -> None:
+    """Route every main-window webview's Escape through the handler above.
+
+    Patched on the class rather than on `mw.web`, so the bottom toolbar
+    and the webviews that come along with an embedded window (the
+    Browser's editor and sidebar) behave the same way. Anything living in
+    its own dialog is filtered out by the `web.window() is mw` test."""
+    try:
+        from aqt.webview import AnkiWebView
+    except Exception:
+        return
+    if getattr(AnkiWebView, "_ba_esc_patched", False):
+        return
+    _orig_on_esc = AnkiWebView.onEsc
+
+    def _on_esc(self: Any) -> None:
+        handled = False
+        try:
+            handled = _handle_main_window_esc(self)
+        except Exception:
+            handled = False
+        if not handled:
+            _orig_on_esc(self)
+
+    AnkiWebView.onEsc = _on_esc  # type: ignore[method-assign]
+    AnkiWebView._ba_esc_patched = True  # type: ignore[attr-defined]
+
+
+gui_hooks.main_window_did_init.append(_install_esc_handler)
+
 
 # Sync status indicator — show pending/full when there are changes to push,
 # and a soft pulse while a sync is in progress.
@@ -2830,12 +2957,12 @@ def _add_tools_menu_action() -> None:
         act.setShortcutContext(Qt.ShortcutContext.ApplicationShortcut)
         act.triggered.connect(_open_settings)
         mw.form.menuTools.addAction(act)
-        # Belt-and-braces: also register a global QShortcut on the main
-        # window so the key fires regardless of focus.
-        sc = QShortcut(QKeySequence("Ctrl+,"), mw)
-        sc.setContext(Qt.ShortcutContext.ApplicationShortcut)
-        sc.activated.connect(_open_settings)
-        # And a macOS Cmd+, equivalent (some Qt builds need it explicitly).
+        # The action's own shortcut is ApplicationShortcut, so it already
+        # fires regardless of focus. Registering a second Ctrl+, QShortcut
+        # "to be safe" made Qt see two live bindings for one sequence and
+        # drop both as an ambiguous overload — i.e. the key did nothing.
+        # Cmd+, on macOS is Qt's "Ctrl+,"; "Meta+," is Control+, there,
+        # which is free, so it can stay as an extra.
         sc2 = QShortcut(QKeySequence("Meta+,"), mw)
         sc2.setContext(Qt.ShortcutContext.ApplicationShortcut)
         sc2.activated.connect(_open_settings)
@@ -3917,13 +4044,17 @@ def _dev_run_cmd(raw: str) -> None:
                         pass
                 rv.web.evalWithCallback(js, _cb)
         elif cmd.startswith("pyeval:"):
-            # Dev-only: exec arbitrary Python on the Qt main thread. `mw` is
-            # in scope; anything assigned to `result` is logged. Used by the
-            # showcase capture pipeline (window geometry, ui scale, etc.).
+            # Dev-only: exec arbitrary Python on the Qt main thread. `mw`
+            # and the add-on's own globals are in scope; anything assigned
+            # to `result` is logged. Used by the showcase capture pipeline
+            # (window geometry, ui scale, etc.). One namespace, not the
+            # globals/locals pair — otherwise helper functions defined in
+            # the snippet can't see the snippet's other names.
             code = raw.split(":", 1)[1]
             try:
-                ns: dict = {"mw": mw, "result": None}
-                exec(code, globals(), ns)
+                ns: dict = dict(globals())
+                ns.update({"mw": mw, "result": None})
+                exec(code, ns)
                 _dev_cmd_log(f"pyeval ok: result={ns.get('result')!r}")
             except Exception as e:
                 _dev_cmd_log(f"pyeval err: {e!r}")
@@ -3933,8 +4064,9 @@ def _dev_run_cmd(raw: str) -> None:
             try:
                 with open(path) as fh:
                     code = fh.read()
-                ns2: dict = {"mw": mw, "result": None}
-                exec(code, globals(), ns2)
+                ns2: dict = dict(globals())
+                ns2.update({"mw": mw, "result": None})
+                exec(code, ns2)
                 _dev_cmd_log(f"pyfile ok: result={ns2.get('result')!r}")
             except Exception as e:
                 _dev_cmd_log(f"pyfile err: {e!r}")
